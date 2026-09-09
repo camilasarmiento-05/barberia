@@ -1,12 +1,14 @@
 <template>
   <div class="pagina">
-    <div class="marca">
-      <h1>Barbería Don Ramiro</h1>
-      <p>Registro de servicios</p>
+    <div class="hero">
+      <div class="hero-texto">
+        <h1>Barbería Don Ramiro</h1>
+        <p>Registro de servicios</p>
+      </div>
     </div>
-
+ 
     <button class="btn-nuevo" @click="abrirModalNuevo">Registrar servicio</button>
-
+ 
     <div class="caja-resumen">
       <div class="linea-resumen">
         <span>Servicios registrados</span>
@@ -21,7 +23,7 @@
         <span>{{ formatearPrecio(totalPendientes()) }}</span>
       </div>
     </div>
-
+ 
     <div class="filtros">
       <select v-model="filtroBarbero">
         <option value="Todos">Todos los barberos</option>
@@ -32,19 +34,19 @@
         <option v-for="e in estadosPago" :key="e" :value="e">{{ e }}</option>
       </select>
     </div>
-
+ 
     <p class="vacio" v-if="!cargando && serviciosFiltrados().length === 0">No hay servicios para mostrar</p>
-
+ 
     <div class="lista-tickets">
     <div class="ticket" v-for="s in serviciosFiltrados()" :key="s.id">
       <span class="estado" :class="s.estadoPago === 'pagado' ? 'estado-verde' : 'estado-naranja'">{{ s.estadoPago }}</span>
-
+ 
       <div class="ticket-titulo">{{ s.cliente }}</div>
       <div class="separador"></div>
-
-      <div class="ticket-fila"><span>Servicio</span><span>{{ s.tipoServicio }}</span></div>
+ 
+      <div class="ticket-fila"><span>Servicio</span><span>{{ (s.servicios || []).join(', ') }}</span></div>
       <div class="ticket-fila"><span>Barbero</span><span>{{ s.barbero }}</span></div>
-
+ 
       <div class="fecha-hora">
         <div class="caja-fecha">
           <span class="etiqueta">Fecha</span>
@@ -55,17 +57,17 @@
           <span>{{ formatearHora(s.hora) }}</span>
         </div>
       </div>
-
+ 
       <div class="ticket-fila">
         <span>Pago</span>
         <span>{{ s.metodoPago }}</span>
       </div>
-
+ 
       <div class="separador"></div>
       <div class="ticket-fila ticket-total"><span>Total</span><span>{{ formatearPrecio(s.precio) }}</span></div>
-
+ 
       <div class="separador"></div>
-
+ 
       <div class="calificacion-seccion">
         <span class="etiqueta">Calificación</span>
         <div class="estrellas">
@@ -79,73 +81,83 @@
         </div>
         <p class="aviso-baja" v-if="s.calificacion > 0 && s.calificacion <= 2">Cliente insatisfecho, revisar servicio</p>
       </div>
-
+ 
       <label class="etiqueta">Observaciones</label>
       <textarea
         class="obs-input"
         v-model="s.observaciones"
         placeholder="Escribe una observación..."
       ></textarea>
-
+ 
       <div class="ticket-acciones">
         <button class="btn-mini editar" @click="abrirModalEditar(s)">Editar</button>
         <button class="btn-mini eliminar" @click="pedirConfirmacionEliminar(s)">Eliminar</button>
       </div>
     </div>
     </div>
-
+ 
     <div class="fondo-modal" v-if="modalAbierto">
       <div class="modal">
         <h2>{{ modoEdicion ? 'Editar servicio' : 'Nuevo servicio' }}</h2>
-
+ 
         <form @submit.prevent="guardarServicio">
           <label>Cliente</label>
           <input type="text" v-model="formulario.cliente">
           <p class="error" v-if="errores.cliente">{{ errores.cliente }}</p>
-
-          <label>Tipo de servicio</label>
-          <select v-model="formulario.tipoServicio" @change="actualizarPrecioAutomatico">
-            <option value="" disabled>Selecciona...</option>
-            <option v-for="t in tiposServicio" :key="t.nombre" :value="t.nombre">{{ t.nombre }}</option>
-          </select>
-          <p class="error" v-if="errores.tipoServicio">{{ errores.tipoServicio }}</p>
-
+ 
+          <label>Servicios (puedes elegir más de uno, ej. corte + cejas)</label>
+          <div class="servicios-opciones">
+            <label class="servicio-check" v-for="t in tiposServicio" :key="t.nombre">
+              <input
+                type="checkbox"
+                :value="t.nombre"
+                v-model="formulario.servicios"
+                @change="actualizarPrecioAutomatico"
+              >
+              <span>{{ t.nombre }}</span>
+            </label>
+          </div>
+          <p class="error" v-if="errores.servicios">{{ errores.servicios }}</p>
+ 
           <label>Barbero</label>
           <select v-model="formulario.barbero">
             <option value="" disabled>Selecciona...</option>
             <option v-for="b in barberos" :key="b" :value="b">{{ b }}</option>
           </select>
           <p class="error" v-if="errores.barbero">{{ errores.barbero }}</p>
-
+ 
           <div class="fila-doble">
             <div>
               <label>Fecha</label>
-              <input type="date" v-model="formulario.fecha">
+              <input type="date" v-model="formulario.fecha" :min="fechaMinima">
               <p class="error" v-if="errores.fecha">{{ errores.fecha }}</p>
             </div>
             <div>
-              <label>Hora</label>
-              <input type="time" v-model="formulario.hora">
+              <label>Hora (6:00 am - 10:00 pm)</label>
+              <select v-model="formulario.hora">
+                <option value="" disabled>Selecciona...</option>
+                <option v-for="h in horasDisponibles" :key="h" :value="h">{{ horaAformato12(h) }}</option>
+              </select>
               <p class="error" v-if="errores.hora">{{ errores.hora }}</p>
             </div>
           </div>
-
+ 
           <label>Precio</label>
           <input type="number" v-model.number="formulario.precio">
           <p class="error" v-if="errores.precio">{{ errores.precio }}</p>
-
+ 
           <label>Método de pago</label>
           <select v-model="formulario.metodoPago">
             <option value="" disabled>Selecciona...</option>
             <option v-for="m in metodosPago" :key="m" :value="m">{{ m }}</option>
           </select>
           <p class="error" v-if="errores.metodoPago">{{ errores.metodoPago }}</p>
-
+ 
           <label>Estado del pago</label>
           <select v-model="formulario.estadoPago">
             <option v-for="e in estadosPago" :key="e" :value="e">{{ e }}</option>
           </select>
-
+ 
           <div class="modal-acciones">
             <button type="submit" class="btn-nuevo" :disabled="guardando">
               <span v-if="guardando" class="spinner-boton"></span>
@@ -156,12 +168,12 @@
         </form>
       </div>
     </div>
-
+ 
     <div class="fondo-modal" v-if="modalEliminarAbierto">
       <div class="modal">
         <h2>¿Eliminar servicio?</h2>
         <p v-if="servicioAEliminar">
-          Cliente: <strong>{{ servicioAEliminar.cliente }}</strong> - {{ servicioAEliminar.tipoServicio }}
+          Cliente: <strong>{{ servicioAEliminar.cliente }}</strong> - {{ (servicioAEliminar.servicios || []).join(', ') }}
         </p>
         <div class="modal-acciones">
           <button class="btn-mini eliminar" @click="confirmarEliminar">Sí, eliminar</button>
@@ -171,11 +183,11 @@
     </div>
   </div>
 </template>
-
+ 
 <script setup>
 import { ref } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
-
+ 
 const barberos = ['Don Ramiro', 'Carlos Pérez', 'Andrés Gómez']
 const tiposServicio = [
   { nombre: 'Corte clásico', precio: 15000 },
@@ -188,19 +200,38 @@ const tiposServicio = [
 ]
 const metodosPago = ['Efectivo', 'Transferencia', 'Tarjeta']
 const estadosPago = ['pagado', 'pendiente']
-
+ 
+// Formato YYYY-MM-DD en horario local (evita el desfase de un día que da toISOString con UTC)
+const fechaMinima = new Date().toLocaleDateString('sv-SE')
+ 
+// Horas permitidas cada 30 min, de 6:00 am a 10:00 pm. Al ser opciones fijas
+// es imposible elegir una hora fuera de ese rango (a diferencia de <input type="time">).
+const horasDisponibles = []
+for (let h = 6; h <= 22; h++) {
+  horasDisponibles.push(`${String(h).padStart(2, '0')}:00`)
+  if (h < 22) horasDisponibles.push(`${String(h).padStart(2, '0')}:30`)
+}
+ 
+function horaAformato12(hora) {
+  if (!hora) return ''
+  const [h, m] = hora.split(':').map(Number)
+  const periodo = h >= 12 ? 'p. m.' : 'a. m.'
+  const h12 = ((h + 11) % 12) + 1
+  return `${h12}:${String(m).padStart(2, '0')} ${periodo}`
+}
+ 
 const servicios = useLocalStorage('br-servicios-don-ramiro', [])
-
+ 
 const modalAbierto = ref(false)
 const modoEdicion = ref(false)
 const idEditando = ref(null)
 const errores = ref({})
 const guardando = ref(false)
-
+ 
 function formularioVacio() {
   return {
     cliente: '',
-    tipoServicio: '',
+    servicios: [],
     barbero: '',
     fecha: '',
     hora: '',
@@ -209,15 +240,15 @@ function formularioVacio() {
     estadoPago: 'pagado'
   }
 }
-
+ 
 const formulario = ref(formularioVacio())
-
+ 
 const modalEliminarAbierto = ref(false)
 const servicioAEliminar = ref(null)
-
+ 
 const filtroBarbero = ref('Todos')
 const filtroEstado = ref('Todos')
-
+ 
 function abrirModalNuevo() {
   modoEdicion.value = false
   idEditando.value = null
@@ -225,13 +256,15 @@ function abrirModalNuevo() {
   errores.value = {}
   modalAbierto.value = true
 }
-
+ 
 function abrirModalEditar(servicio) {
   modoEdicion.value = true
   idEditando.value = servicio.id
   formulario.value = {
     cliente: servicio.cliente,
-    tipoServicio: servicio.tipoServicio,
+    servicios: servicio.servicios
+      ? [...servicio.servicios]
+      : (servicio.tipoServicio ? [servicio.tipoServicio] : []),
     barbero: servicio.barbero,
     fecha: servicio.fecha,
     hora: servicio.hora,
@@ -242,34 +275,45 @@ function abrirModalEditar(servicio) {
   errores.value = {}
   modalAbierto.value = true
 }
-
+ 
 function cerrarModal() {
   modalAbierto.value = false
 }
-
+ 
 function actualizarPrecioAutomatico() {
-  const encontrado = tiposServicio.find(t => t.nombre === formulario.value.tipoServicio)
-  if (encontrado && encontrado.nombre !== 'Otro') {
-    formulario.value.precio = encontrado.precio
+  const seleccionados = formulario.value.servicios || []
+  const suma = seleccionados
+    .map(nombre => tiposServicio.find(t => t.nombre === nombre))
+    .filter(t => t && t.nombre !== 'Otro')
+    .reduce((acc, t) => acc + t.precio, 0)
+ 
+  // Si "Otro" es el único servicio marcado, dejamos el precio en manos del barbero.
+  const soloOtro = seleccionados.length > 0 && seleccionados.every(n => n === 'Otro')
+  if (!soloOtro) {
+    formulario.value.precio = suma
   }
 }
-
+ 
 function validarFormulario() {
   const err = {}
   if (!formulario.value.cliente || formulario.value.cliente.trim().length < 2) {
     err.cliente = 'Escribe el nombre del cliente.'
   }
-  if (!formulario.value.tipoServicio) {
-    err.tipoServicio = 'Selecciona el tipo de servicio.'
+  if (!formulario.value.servicios || formulario.value.servicios.length === 0) {
+    err.servicios = 'Selecciona al menos un servicio.'
   }
   if (!formulario.value.barbero) {
     err.barbero = 'Selecciona quién atendió.'
   }
   if (!formulario.value.fecha) {
     err.fecha = 'Selecciona la fecha.'
+  } else if (formulario.value.fecha < fechaMinima) {
+    err.fecha = 'La fecha no puede ser anterior a hoy.'
   }
   if (!formulario.value.hora) {
     err.hora = 'Selecciona la hora.'
+  } else if (formulario.value.hora < '06:00' || formulario.value.hora > '22:00') {
+    err.hora = 'La hora debe estar entre las 6:00 am y las 10:00 pm.'
   }
   if (formulario.value.precio === null || formulario.value.precio === '' || Number(formulario.value.precio) <= 0) {
     err.precio = 'El precio debe ser mayor a 0.'
@@ -280,12 +324,12 @@ function validarFormulario() {
   errores.value = err
   return Object.keys(err).length === 0
 }
-
+ 
 function guardarServicio() {
   if (!validarFormulario()) return
-
+ 
   guardando.value = true
-
+ 
   setTimeout(() => {
     if (modoEdicion.value) {
       const index = servicios.value.findIndex(s => s.id === idEditando.value)
@@ -309,30 +353,30 @@ function guardarServicio() {
     modalAbierto.value = false
   }, 900)
 }
-
+ 
 function calificarServicio(servicio, n) {
   const index = servicios.value.findIndex(s => s.id === servicio.id)
   if (index !== -1) {
     servicios.value[index].calificacion = n
   }
 }
-
+ 
 function pedirConfirmacionEliminar(servicio) {
   servicioAEliminar.value = servicio
   modalEliminarAbierto.value = true
 }
-
+ 
 function cancelarEliminar() {
   modalEliminarAbierto.value = false
   servicioAEliminar.value = null
 }
-
+ 
 function confirmarEliminar() {
   servicios.value = servicios.value.filter(s => s.id !== servicioAEliminar.value.id)
   modalEliminarAbierto.value = false
   servicioAEliminar.value = null
 }
-
+ 
 function serviciosFiltrados() {
   return servicios.value.filter(s => {
     const pasaBarbero = filtroBarbero.value === 'Todos' || s.barbero === filtroBarbero.value
@@ -340,35 +384,34 @@ function serviciosFiltrados() {
     return pasaBarbero && pasaEstado
   })
 }
-
+ 
 function formatearFecha(fecha) {
   if (!fecha) return ''
   const [anio, mes, dia] = fecha.split('-')
   return `${dia}/${mes}/${anio}`
 }
-
+ 
 function formatearHora(hora) {
-  if (!hora) return ''
-  return hora
+  return horaAformato12(hora)
 }
-
+ 
 function formatearPrecio(precio) {
   return Number(precio || 0).toLocaleString('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 })
 }
-
+ 
 function totalIngresos() {
   return servicios.value.filter(s => s.estadoPago === 'pagado').reduce((acc, s) => acc + Number(s.precio || 0), 0)
 }
-
+ 
 function totalPendientes() {
   return servicios.value.filter(s => s.estadoPago !== 'pagado').reduce((acc, s) => acc + Number(s.precio || 0), 0)
 }
-
+ 
 function totalPendientesCantidad() {
   return servicios.value.filter(s => s.estadoPago !== 'pagado').length
 }
 </script>
-
+ 
 <style>
 html, body, #app {
   width: 100%;
@@ -377,7 +420,7 @@ html, body, #app {
   padding: 0;
   display: block;
 }
-
+ 
 .pagina {
   font-family: Arial, sans-serif;
   max-width: 1100px;
@@ -387,13 +430,13 @@ html, body, #app {
   min-height: 100vh;
   color: #222;
 }
-
+ 
 .lista-tickets {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 18px;
 }
-
+ 
 .spinner-boton {
   display: inline-block;
   width: 16px;
@@ -406,24 +449,40 @@ html, body, #app {
 @keyframes girar {
   to { transform: rotate(360deg); }
 }
-
-.marca {
+ 
+.hero {
+  position: relative;
+  margin: -16px -24px 18px;
+  height: 200px;
+  background-image:
+    linear-gradient(180deg, rgba(20, 10, 8, 0.35) 0%, rgba(20, 10, 8, 0.75) 100%),
+    url('https://theshaveclub.imgix.net/uploads/2025/03/Diferencia-entre-barberia-y-peluqueria.jpg?auto=format%2Ccompress&ixlib=php-3.3.0');
+  background-size: cover;
+  background-position: center 35%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  border-bottom: 3px solid #7a1f1f;
+}
+.hero-texto {
   text-align: center;
-  margin-bottom: 16px;
-  border-bottom: 2px solid #7a1f1f;
-  padding-bottom: 8px;
+  padding-bottom: 16px;
 }
-.marca h1 {
+.hero-texto h1 {
   margin: 0;
-  font-size: 18px;
-  color: #7a1f1f;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 26px;
+  letter-spacing: 0.5px;
+  color: #f5efe0;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
 }
-.marca p {
-  margin: 2px 0 0;
-  font-size: 12px;
-  color: #666;
+.hero-texto p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #e7ddc8;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
 }
-
+ 
 .btn-nuevo {
   width: 100%;
   background: #7a1f1f;
@@ -442,7 +501,7 @@ html, body, #app {
   opacity: 0.7;
   cursor: not-allowed;
 }
-
+ 
 .caja-resumen {
   background: #fff;
   border: 1px solid #ddd;
@@ -458,7 +517,7 @@ html, body, #app {
 }
 .linea-resumen.verde span:last-child { color: #2e6b2e; font-weight: bold; }
 .linea-resumen.rojo span:last-child { color: #7a1f1f; font-weight: bold; }
-
+ 
 .filtros {
   display: flex;
   gap: 8px;
@@ -472,13 +531,13 @@ html, body, #app {
   border: 1px solid #ccc;
   border-radius: 4px;
 }
-
+ 
 .vacio {
   text-align: center;
   color: #888;
   margin: 24px 0;
 }
-
+ 
 .ticket {
   position: relative;
   background: #fff;
@@ -488,7 +547,7 @@ html, body, #app {
   margin-bottom: 18px;
   font-size: 14px;
 }
-
+ 
 .estado {
   position: absolute;
   top: 14px;
@@ -501,24 +560,24 @@ html, body, #app {
 }
 .estado-verde { background: #e2f3e2; color: #2e6b2e; }
 .estado-naranja { background: #fbe8d3; color: #b5590a; }
-
+ 
 .ticket-titulo {
   font-size: 17px;
   font-weight: bold;
   margin-bottom: 8px;
 }
-
+ 
 .separador {
   border-top: 1px solid #eee;
   margin: 10px 0;
 }
-
+ 
 .ticket-fila {
   display: flex;
   justify-content: space-between;
   padding: 3px 0;
 }
-
+ 
 .fecha-hora {
   display: flex;
   gap: 10px;
@@ -537,13 +596,13 @@ html, body, #app {
   color: #888;
   text-transform: uppercase;
 }
-
+ 
 .ticket-total span {
   font-weight: bold;
   font-size: 16px;
   color: #7a1f1f;
 }
-
+ 
 .calificacion-seccion {
   margin: 8px 0;
 }
@@ -558,13 +617,13 @@ html, body, #app {
 }
 .estrella.llena { color: #b5590a; }
 .estrella.llena.baja { color: #7a1f1f; }
-
+ 
 .aviso-baja {
   font-size: 12px;
   color: #7a1f1f;
   margin: 4px 0 0;
 }
-
+ 
 .obs-input {
   width: 100%;
   margin-top: 4px;
@@ -576,7 +635,7 @@ html, body, #app {
   resize: vertical;
   min-height: 50px;
 }
-
+ 
 .ticket-acciones {
   display: flex;
   gap: 8px;
@@ -594,7 +653,7 @@ html, body, #app {
 .btn-mini.editar { background: #2e6b2e; color: white; }
 .btn-mini.eliminar { background: #7a1f1f; color: white; }
 .btn-mini.cancelar { background: #e0e0e0; color: #222; }
-
+ 
 label { display: block; margin-top: 8px; font-weight: bold; font-size: 12px; }
 input, select, textarea {
   width: 100%;
@@ -605,7 +664,31 @@ input, select, textarea {
   font-family: inherit;
 }
 .error { color: #7a1f1f; font-size: 11px; margin: 2px 0; }
-
+ 
+.servicios-opciones {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px 10px;
+  margin-top: 4px;
+}
+.servicio-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-weight: normal;
+  font-size: 13px;
+  background: #f5f1e8;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.servicio-check input {
+  width: auto;
+  margin: 0;
+}
+ 
 .fila-doble {
   display: flex;
   gap: 10px;
@@ -613,7 +696,7 @@ input, select, textarea {
 .fila-doble > div {
   flex: 1;
 }
-
+ 
 .fondo-modal {
   position: fixed;
   inset: 0;
@@ -637,3 +720,4 @@ input, select, textarea {
 .modal-acciones { display: flex; gap: 10px; margin-top: 16px; }
 .modal-acciones .btn-nuevo, .modal-acciones .btn-mini { margin: 0; }
 </style>
+ 
