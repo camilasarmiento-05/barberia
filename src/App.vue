@@ -5,12 +5,15 @@
       <p>Registro de servicios</p>
     </div>
 
-    <button class="btn-nuevo" @click="abrirModalNuevo">Registrar servicio</button>
+    <div class="fila-botones-top">
+      <button class="btn-nuevo" @click="abrirModalNuevo">Registrar servicio</button>
+      <button class="btn-secundario" @click="abrirCatalogo">Catálogo de servicios</button>
+    </div>
 
     <div class="caja-resumen">
       <div class="linea-resumen">
         <span>Servicios registrados</span>
-        <span>{{ servicios.length }}</span>
+        <span>{{ serviciosActivos().length }}</span>
       </div>
       <div class="linea-resumen verde">
         <span>Total recaudado</span>
@@ -19,6 +22,47 @@
       <div class="linea-resumen rojo" v-if="totalPendientesCantidad() > 0">
         <span>Con saldo pendiente ({{ totalPendientesCantidad() }})</span>
         <span>{{ formatearPrecio(totalPendientes()) }}</span>
+      </div>
+    </div>
+
+    <div class="caja-estadisticas">
+      <h3>Estadísticas de hoy</h3>
+      <div class="linea-resumen">
+        <span>Total vendido hoy</span>
+        <span>{{ formatearPrecio(totalVendidoHoy()) }}</span>
+      </div>
+      <div class="linea-resumen">
+        <span>Servicios de hoy</span>
+        <span>{{ serviciosHoy().length }}</span>
+      </div>
+      <div class="linea-resumen">
+        <span>Promedio de calificación</span>
+        <span>{{ promedioCalificacionHoy() > 0 ? promedioCalificacionHoy() + ' ★' : 'Sin datos' }}</span>
+      </div>
+      <div class="linea-resumen">
+        <span>Barbero con más cortes hoy</span>
+        <span>{{ barberoConMasCortesHoy() }}</span>
+      </div>
+    </div>
+
+    <div class="caja-historial-cliente">
+      <label>Buscar historial de cliente</label>
+      <input type="text" v-model="busquedaCliente" placeholder="Escribe el nombre del cliente...">
+      <div v-if="historialCliente()" class="resultado-historial">
+        <p>
+          <strong>{{ historialCliente().nombre }}</strong> ha venido
+          <strong>{{ historialCliente().visitas }}</strong>
+          {{ historialCliente().visitas === 1 ? 'vez' : 'veces' }}
+        </p>
+        <p>Total gastado: <strong>{{ formatearPrecio(historialCliente().totalGastado) }}</strong></p>
+      </div>
+    </div>
+
+    <div class="caja-deudas" v-if="deudasPorCliente().length > 0">
+      <h3>⚠ Saldos fiados / pendientes por cliente</h3>
+      <div class="linea-deuda" v-for="d in deudasPorCliente()" :key="d.cliente">
+        <span>{{ d.cliente }}</span>
+        <span>{{ formatearPrecio(d.total) }}</span>
       </div>
     </div>
 
@@ -33,96 +77,142 @@
       </select>
     </div>
 
+    <div class="orden-botones">
+      <span class="etiqueta">Ordenar por</span>
+      <button
+        v-for="opt in opcionesOrden"
+        :key="opt.key"
+        type="button"
+        class="btn-orden"
+        :class="{ activo: ordenarPor === opt.key }"
+        @click="cambiarOrden(opt.key)"
+      >{{ opt.label }} <span v-if="ordenarPor === opt.key">{{ ordenDireccion === 'asc' ? '↑' : '↓' }}</span></button>
+    </div>
+
     <p class="vacio" v-if="!cargando && serviciosFiltrados().length === 0">No hay servicios para mostrar</p>
 
-    <div class="lista-tickets">
-    <div class="ticket" v-for="s in serviciosFiltrados()" :key="s.id">
-      <span class="estado" :class="claseEstado(s.estadoPago)">{{ s.estadoPago }}</span>
+    <div class="turnos-contenedor">
+      <template v-for="turno in ['Mañana', 'Tarde', 'Noche']" :key="turno">
+        <div class="turno-grupo" v-if="serviciosPorTurno()[turno].length > 0">
+          <div class="turno-titulo">{{ turno }} ({{ serviciosPorTurno()[turno].length }})</div>
+          <div class="lista-tickets">
+            <div class="ticket" v-for="s in serviciosPorTurno()[turno]" :key="s.id">
+              <span class="estado" :class="claseEstado(s.estadoPago)">{{ s.estadoPago }}</span>
 
-      <div class="ticket-titulo">{{ s.cliente }}</div>
-      <div class="separador"></div>
+              <div class="ticket-titulo">{{ s.cliente }}</div>
+              <div class="separador"></div>
 
-      <div class="servicios-bloque">
-        <span class="etiqueta">Servicios</span>
-        <div class="servicio-item" v-for="(nombre, idx) in s.tiposServicio" :key="idx">{{ nombre }}</div>
-      </div>
-      <div class="separador"></div>
+              <div class="servicios-bloque">
+                <span class="etiqueta">Servicios</span>
+                <div class="servicio-item" v-for="(nombre, idx) in s.tiposServicio" :key="idx">{{ nombre }}</div>
+              </div>
+              <div class="separador"></div>
 
-      <div class="ticket-fila"><span>Barbero</span><span>{{ s.barbero }}</span></div>
+              <div class="ticket-fila"><span>Barbero</span><span>{{ s.barbero }}</span></div>
 
-      <div class="fecha-hora">
-        <div class="caja-fecha">
-          <span class="etiqueta">Fecha</span>
-          <span>{{ formatearFecha(s.fecha) }}</span>
+              <div class="fecha-hora">
+                <div class="caja-fecha">
+                  <span class="etiqueta">Fecha</span>
+                  <span>{{ formatearFecha(s.fecha) }}</span>
+                </div>
+                <div class="caja-fecha">
+                  <span class="etiqueta">Hora</span>
+                  <span>{{ s.hora }}</span>
+                </div>
+              </div>
+
+              <div class="ticket-fila">
+                <span>Pago</span>
+                <span>{{ s.metodoPago }}</span>
+              </div>
+
+              <div class="separador"></div>
+              <div class="ticket-fila ticket-total">
+                <span>Total</span>
+                <span v-if="s.propina > 0">{{ formatearPrecio(s.precio) }} + {{ formatearPrecio(s.propina) }} propina</span>
+                <span v-else>{{ formatearPrecio(s.precio) }}</span>
+              </div>
+              <div class="ticket-fila fila-abonado" v-if="s.montoAbonado > 0 && s.montoAbonado < precioTotal(s)">
+                <span>Abonado</span><span>{{ formatearPrecio(s.montoAbonado) }}</span>
+              </div>
+              <div class="ticket-fila fila-saldo" v-if="saldoRestante(s) > 0">
+                <span>Saldo pendiente</span><span>{{ formatearPrecio(saldoRestante(s)) }}</span>
+              </div>
+
+              <div class="historial-abonos" v-if="s.historialAbonos && s.historialAbonos.length > 0">
+                <span class="etiqueta">Historial de abonos</span>
+                <div class="linea-abono" v-for="(a, idx) in s.historialAbonos" :key="idx">
+                  <span>{{ formatearFecha(a.fecha) }}</span>
+                  <span>{{ formatearPrecio(a.monto) }}</span>
+                </div>
+              </div>
+
+              <button
+                class="btn-mini abonar"
+                v-if="saldoRestante(s) > 0"
+                @click="abrirModalAbono(s)"
+              >Agregar abono</button>
+
+              <div class="fotos-antes-despues" v-if="s.fotoAntes || s.fotoDespues">
+                <div class="foto-item" v-if="s.fotoAntes">
+                  <span class="etiqueta">Antes</span>
+                  <img :src="s.fotoAntes" class="foto-mini">
+                </div>
+                <div class="foto-item" v-if="s.fotoDespues">
+                  <span class="etiqueta">Después</span>
+                  <img :src="s.fotoDespues" class="foto-mini">
+                </div>
+              </div>
+
+              <div class="separador"></div>
+
+              <div class="calificacion-seccion">
+                <span class="etiqueta">Calificación</span>
+                <div class="estrellas" :class="{ bloqueada: s.estadoPago !== 'pagado' }">
+                  <span
+                    v-for="n in [1,2,3,4,5]"
+                    :key="n"
+                    class="estrella"
+                    :class="{ llena: n <= s.calificacion, baja: n <= s.calificacion && s.calificacion <= 2 }"
+                    @click="calificarServicio(s, n)"
+                  >★</span>
+                </div>
+                <p class="aviso-baja" v-if="s.estadoPago !== 'pagado'">Debes terminar de pagar para poder calificar</p>
+                <p class="aviso-baja" v-else-if="s.calificacion > 0 && s.calificacion <= 2">Cliente insatisfecho, revisar servicio</p>
+              </div>
+
+              <label class="etiqueta">Observaciones</label>
+              <textarea
+                class="obs-input"
+                v-model="s.observaciones"
+                placeholder="Escribe una observación..."
+              ></textarea>
+
+              <div class="ticket-acciones">
+                <button
+                  class="btn-mini editar"
+                  @click="abrirModalEditar(s)"
+                  :disabled="s.calificacion > 0"
+                  :title="s.calificacion > 0 ? 'No se puede editar un servicio ya calificado' : ''"
+                >Editar</button>
+                <button class="btn-mini eliminar" @click="pedirConfirmacionEliminar(s)">Eliminar</button>
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="caja-fecha">
-          <span class="etiqueta">Hora</span>
-          <span>{{ s.hora }}</span>
-        </div>
-      </div>
-
-      <div class="ticket-fila">
-        <span>Pago</span>
-        <span>{{ s.metodoPago }}</span>
-      </div>
-
-      <div class="separador"></div>
-      <div class="ticket-fila ticket-total"><span>Total</span><span>{{ formatearPrecio(s.precio) }}</span></div>
-      <div class="ticket-fila fila-abonado" v-if="s.montoAbonado > 0 && s.montoAbonado < s.precio">
-        <span>Abonado</span><span>{{ formatearPrecio(s.montoAbonado) }}</span>
-      </div>
-      <div class="ticket-fila fila-saldo" v-if="saldoRestante(s) > 0">
-        <span>Saldo pendiente</span><span>{{ formatearPrecio(saldoRestante(s)) }}</span>
-      </div>
-
-      <div class="historial-abonos" v-if="s.historialAbonos && s.historialAbonos.length > 0">
-        <span class="etiqueta">Historial de abonos</span>
-        <div class="linea-abono" v-for="(a, idx) in s.historialAbonos" :key="idx">
-          <span>{{ formatearFecha(a.fecha) }}</span>
-          <span>{{ formatearPrecio(a.monto) }}</span>
-        </div>
-      </div>
-
-      <button
-        class="btn-mini abonar"
-        v-if="saldoRestante(s) > 0"
-        @click="abrirModalAbono(s)"
-      >Agregar abono</button>
-
-      <div class="separador"></div>
-
-      <div class="calificacion-seccion">
-        <span class="etiqueta">Calificación</span>
-        <div class="estrellas" :class="{ bloqueada: s.estadoPago !== 'pagado' }">
-          <span
-            v-for="n in [1,2,3,4,5]"
-            :key="n"
-            class="estrella"
-            :class="{ llena: n <= s.calificacion, baja: n <= s.calificacion && s.calificacion <= 2 }"
-            @click="calificarServicio(s, n)"
-          >★</span>
-        </div>
-        <p class="aviso-baja" v-if="s.estadoPago !== 'pagado'">Debes terminar de pagar para poder calificar</p>
-        <p class="aviso-baja" v-else-if="s.calificacion > 0 && s.calificacion <= 2">Cliente insatisfecho, revisar servicio</p>
-      </div>
-
-      <label class="etiqueta">Observaciones</label>
-      <textarea
-        class="obs-input"
-        v-model="s.observaciones"
-        placeholder="Escribe una observación..."
-      ></textarea>
-
-      <div class="ticket-acciones">
-        <button
-          class="btn-mini editar"
-          @click="abrirModalEditar(s)"
-          :disabled="s.calificacion > 0"
-          :title="s.calificacion > 0 ? 'No se puede editar un servicio ya calificado' : ''"
-        >Editar</button>
-        <button class="btn-mini eliminar" @click="pedirConfirmacionEliminar(s)">Eliminar</button>
-      </div>
+      </template>
     </div>
+
+    <div class="caja-comisiones">
+      <div class="comisiones-header">
+        <h3>Comisiones de hoy</h3>
+        <button class="btn-mini cerrar-caja" @click="abrirCierreCaja">Cerrar caja</button>
+      </div>
+      <div class="linea-comision" v-for="b in barberos" :key="b">
+        <span class="comision-nombre">{{ b }}</span>
+        <span class="comision-pct"><input type="number" v-model.number="comisiones[b]" min="0" max="100">%</span>
+        <span class="comision-monto">{{ formatearPrecio(comisionBarbero(b)) }}</span>
+      </div>
     </div>
 
     <div class="fondo-modal" v-if="modalAbierto">
@@ -133,10 +223,11 @@
           <label>Cliente</label>
           <input type="text" v-model="formulario.cliente">
           <p class="error" v-if="errores.cliente">{{ errores.cliente }}</p>
+          <p class="alerta-fidelidad" v-if="clienteEsFrecuente()">¡Cliente frecuente, aplica 10% de descuento!</p>
 
           <label>Tipo de servicio</label>
           <div class="lista-checks">
-            <label class="check-item" v-for="t in tiposServicio" :key="t.nombre">
+            <label class="check-item" v-for="t in catalogoServicios" :key="t.nombre">
               <input
                 type="checkbox"
                 :value="t.nombre"
@@ -182,6 +273,10 @@
           <p class="pista-precio">El precio se calcula según los servicios seleccionados</p>
           <p class="error" v-if="errores.precio">{{ errores.precio }}</p>
 
+          <label>Propina (opcional)</label>
+          <input type="number" v-model.number="formulario.propina" min="0" placeholder="0">
+          <p class="error" v-if="errores.propina">{{ errores.propina }}</p>
+
           <label>Método de pago</label>
           <select v-model="formulario.metodoPago">
             <option value="" disabled>Selecciona...</option>
@@ -197,9 +292,18 @@
           <template v-if="formulario.estadoPago === 'abonado'">
             <label>¿Cuánto abona?</label>
             <input type="number" v-model.number="formulario.montoAbonado" min="1">
-            <p class="pista-precio" v-if="formulario.precio > 0">Total del servicio: {{ formatearPrecio(formulario.precio) }}</p>
+            <p class="pista-precio" v-if="formulario.precio > 0">Total del servicio: {{ formatearPrecio(formulario.precio + (formulario.propina || 0)) }}</p>
             <p class="error" v-if="errores.montoAbonado">{{ errores.montoAbonado }}</p>
           </template>
+
+          <label>Foto antes (opcional)</label>
+          <input type="file" accept="image/*" @change="manejarFoto($event, 'fotoAntes')">
+          <img v-if="formulario.fotoAntes" :src="formulario.fotoAntes" class="foto-preview">
+
+          <label>Foto después (opcional)</label>
+          <input type="file" accept="image/*" @change="manejarFoto($event, 'fotoDespues')">
+          <img v-if="formulario.fotoDespues" :src="formulario.fotoDespues" class="foto-preview">
+          <p class="pista-precio">Las fotos se guardan en el navegador; usa imágenes livianas (máx. 2 por servicio).</p>
 
           <div class="modal-acciones">
             <button type="submit" class="btn-nuevo" :disabled="guardando">
@@ -243,6 +347,55 @@
         </div>
       </div>
     </div>
+
+    <div class="fondo-modal" v-if="modalCatalogoAbierto">
+      <div class="modal">
+        <h2>Catálogo de servicios</h2>
+
+        <div class="catalogo-lista">
+          <div class="catalogo-item" v-for="(t, idx) in catalogoServicios" :key="t.nombre">
+            <span class="catalogo-nombre">{{ t.nombre }}</span>
+            <span class="catalogo-precio">{{ formatearPrecio(t.precio) }}</span>
+            <div class="catalogo-acciones">
+              <button type="button" class="btn-mini editar" @click="editarServicioCatalogo(idx)">Editar</button>
+              <button type="button" class="btn-mini eliminar" @click="eliminarServicioCatalogo(idx)">Eliminar</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="separador"></div>
+
+        <label>Nombre del servicio</label>
+        <input type="text" v-model="formCatalogoNombre" placeholder="Ej: Corte niño">
+        <label>Precio base sugerido</label>
+        <input type="number" v-model.number="formCatalogoPrecio" min="0" placeholder="0">
+
+        <div class="modal-acciones">
+          <button type="button" class="btn-nuevo" @click="agregarOActualizarServicioCatalogo">
+            {{ catalogoEditandoIndex !== null ? 'Actualizar servicio' : 'Agregar servicio' }}
+          </button>
+          <button type="button" class="btn-mini cancelar" @click="cerrarCatalogo">Cerrar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="fondo-modal" v-if="modalCierreAbierto">
+      <div class="modal">
+        <h2>Cierre de caja</h2>
+        <div class="resumen-cierre" v-if="resumenCierre">
+          <div class="linea-resumen"><span>Servicios de hoy</span><span>{{ resumenCierre.cantidad }}</span></div>
+          <div class="linea-resumen verde"><span>Total efectivo</span><span>{{ formatearPrecio(resumenCierre.efectivo) }}</span></div>
+          <div class="linea-resumen verde"><span>Total transferencia</span><span>{{ formatearPrecio(resumenCierre.transferencia) }}</span></div>
+          <div class="linea-resumen verde"><span>Total tarjeta</span><span>{{ formatearPrecio(resumenCierre.tarjeta) }}</span></div>
+          <div class="linea-resumen rojo"><span>Pendientes por cobrar</span><span>{{ formatearPrecio(resumenCierre.pendientes) }}</span></div>
+        </div>
+        <p class="pista-precio">Al confirmar, los servicios de hoy se archivarán y dejarán de aparecer en la vista principal. Las deudas seguirán visibles en el panel de alertas.</p>
+        <div class="modal-acciones">
+          <button class="btn-nuevo" @click="confirmarCierreCaja">Confirmar y archivar</button>
+          <button class="btn-mini cancelar" @click="cancelarCierreCaja">Cancelar</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -251,16 +404,30 @@ import { ref } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 
 const barberos = ['Don Ramiro', 'Carlos Pérez', 'Andrés Gómez']
-const tiposServicio = [
+
+const catalogoServicios = useLocalStorage('br-catalogo-servicios', [
   { nombre: 'Corte tradicional', precio: 15000 },
   { nombre: 'Depilación', precio: 10000 },
   { nombre: 'Barba', precio: 10000 },
   { nombre: 'Corte + barba', precio: 25000 },
   { nombre: 'Cejas', precio: 8000 },
   { nombre: 'Tinte', precio: 30000 }
-]
+])
+
+const comisiones = useLocalStorage('br-comisiones-barberos', {
+  'Don Ramiro': 50,
+  'Carlos Pérez': 40,
+  'Andrés Gómez': 40
+})
+
 const metodosPago = ['Efectivo', 'Transferencia', 'Tarjeta']
-const estadosPago = ['pagado', 'abonado', 'pendiente']
+const estadosPago = ['pagado', 'abonado', 'pendiente', 'fiado']
+
+const opcionesOrden = [
+  { key: 'fecha', label: 'Fecha' },
+  { key: 'precio', label: 'Precio' },
+  { key: 'calificacion', label: 'Calificación' }
+]
 
 function generarHorasDisponibles() {
   const horas = []
@@ -277,6 +444,7 @@ function generarHorasDisponibles() {
 const horasDisponibles = generarHorasDisponibles()
 
 const servicios = useLocalStorage('br-servicios-don-ramiro', [])
+const cargando = ref(false)
 
 const modalAbierto = ref(false)
 const modoEdicion = ref(false)
@@ -288,6 +456,23 @@ const modalAbonoAbierto = ref(false)
 const servicioAbonando = ref(null)
 const montoNuevoAbono = ref(null)
 const errorAbono = ref('')
+
+const modalEliminarAbierto = ref(false)
+const servicioAEliminar = ref(null)
+
+const modalCatalogoAbierto = ref(false)
+const formCatalogoNombre = ref('')
+const formCatalogoPrecio = ref(null)
+const catalogoEditandoIndex = ref(null)
+
+const modalCierreAbierto = ref(false)
+const resumenCierre = ref(null)
+
+const filtroBarbero = ref('Todos')
+const filtroEstado = ref('Todos')
+const ordenarPor = ref('fecha')
+const ordenDireccion = ref('desc')
+const busquedaCliente = ref('')
 
 function fechaHoyString() {
   const hoy = new Date()
@@ -307,19 +492,16 @@ function formularioVacio() {
     fecha: '',
     hora: '',
     precio: 0,
+    propina: null,
     metodoPago: '',
     estadoPago: 'pagado',
-    montoAbonado: null
+    montoAbonado: null,
+    fotoAntes: null,
+    fotoDespues: null
   }
 }
 
 const formulario = ref(formularioVacio())
-
-const modalEliminarAbierto = ref(false)
-const servicioAEliminar = ref(null)
-
-const filtroBarbero = ref('Todos')
-const filtroEstado = ref('Todos')
 
 function abrirModalNuevo() {
   modoEdicion.value = false
@@ -330,7 +512,7 @@ function abrirModalNuevo() {
 }
 
 function abrirModalEditar(servicio) {
-  if (servicio.calificacion > 0) return 
+  if (servicio.calificacion > 0) return
   modoEdicion.value = true
   idEditando.value = servicio.id
   formulario.value = {
@@ -340,9 +522,12 @@ function abrirModalEditar(servicio) {
     fecha: servicio.fecha,
     hora: servicio.hora,
     precio: servicio.precio,
+    propina: servicio.propina || null,
     metodoPago: servicio.metodoPago,
     estadoPago: servicio.estadoPago,
-    montoAbonado: servicio.estadoPago === 'abonado' ? servicio.montoAbonado : null
+    montoAbonado: servicio.estadoPago === 'abonado' ? servicio.montoAbonado : null,
+    fotoAntes: servicio.fotoAntes || null,
+    fotoDespues: servicio.fotoDespues || null
   }
   errores.value = {}
   modalAbierto.value = true
@@ -354,7 +539,7 @@ function cerrarModal() {
 
 function actualizarPrecioAutomatico() {
   const total = formulario.value.tiposServicio.reduce((acc, nombre) => {
-    const encontrado = tiposServicio.find(t => t.nombre === nombre)
+    const encontrado = catalogoServicios.value.find(t => t.nombre === nombre)
     return acc + (encontrado ? encontrado.precio : 0)
   }, 0)
   formulario.value.precio = total
@@ -368,11 +553,35 @@ function nombresServicios(lista) {
 function claseEstado(estado) {
   if (estado === 'pagado') return 'estado-verde'
   if (estado === 'abonado') return 'estado-azul'
+  if (estado === 'fiado') return 'estado-fiado'
   return 'estado-naranja'
 }
 
+function precioTotal(servicio) {
+  return Number(servicio.precio || 0) + Number(servicio.propina || 0)
+}
+
 function saldoRestante(servicio) {
-  return Math.max(0, Number(servicio.precio || 0) - Number(servicio.montoAbonado || 0))
+  return Math.max(0, precioTotal(servicio) - Number(servicio.montoAbonado || 0))
+}
+
+function manejarFoto(event, campo) {
+  const archivo = event.target.files[0]
+  if (!archivo) return
+  const lector = new FileReader()
+  lector.onload = () => {
+    formulario.value[campo] = lector.result
+  }
+  lector.readAsDataURL(archivo)
+}
+
+function clienteEsFrecuente() {
+  if (!formulario.value.cliente || formulario.value.cliente.trim().length < 2) return false
+  const nombre = formulario.value.cliente.trim().toLowerCase()
+  const visitas = servicios.value.filter(
+    s => s.cliente.trim().toLowerCase() === nombre && s.id !== idEditando.value
+  ).length
+  return visitas >= 5
 }
 
 function validarFormulario() {
@@ -397,14 +606,18 @@ function validarFormulario() {
   if (formulario.value.precio === null || formulario.value.precio === '' || Number(formulario.value.precio) <= 0) {
     err.precio = 'Selecciona al menos un servicio válido.'
   }
+  if (formulario.value.propina !== null && formulario.value.propina !== '' && Number(formulario.value.propina) < 0) {
+    err.propina = 'La propina no puede ser negativa.'
+  }
   if (!formulario.value.metodoPago) {
     err.metodoPago = 'Selecciona el método de pago.'
   }
   if (formulario.value.estadoPago === 'abonado') {
     const monto = Number(formulario.value.montoAbonado)
+    const totalConPropina = Number(formulario.value.precio) + Number(formulario.value.propina || 0)
     if (!formulario.value.montoAbonado || monto <= 0) {
       err.montoAbonado = 'Indica cuánto abona.'
-    } else if (monto >= Number(formulario.value.precio)) {
+    } else if (monto >= totalConPropina) {
       err.montoAbonado = 'Si abona el total, selecciona el estado "pagado".'
     }
   }
@@ -419,12 +632,14 @@ function guardarServicio() {
 
   setTimeout(() => {
     const precioFinal = Number(formulario.value.precio)
+    const propinaFinal = Number(formulario.value.propina) || 0
+    const totalFinal = precioFinal + propinaFinal
     let montoAbonadoFinal = 0
     let historialAbonos = []
 
     if (formulario.value.estadoPago === 'pagado') {
-      montoAbonadoFinal = precioFinal
-      historialAbonos = [{ monto: precioFinal, fecha: fechaHoyString() }]
+      montoAbonadoFinal = totalFinal
+      historialAbonos = [{ monto: totalFinal, fecha: fechaHoyString() }]
     } else if (formulario.value.estadoPago === 'abonado') {
       montoAbonadoFinal = Number(formulario.value.montoAbonado)
       historialAbonos = [{ monto: montoAbonadoFinal, fecha: fechaHoyString() }]
@@ -437,6 +652,7 @@ function guardarServicio() {
           ...servicios.value[index],
           ...formulario.value,
           precio: precioFinal,
+          propina: propinaFinal,
           montoAbonado: montoAbonadoFinal,
           historialAbonos
         }
@@ -446,10 +662,12 @@ function guardarServicio() {
         ...formulario.value,
         id: Date.now(),
         precio: precioFinal,
+        propina: propinaFinal,
         montoAbonado: montoAbonadoFinal,
         historialAbonos,
         calificacion: 0,
-        observaciones: ''
+        observaciones: '',
+        archivado: false
       })
     }
     guardando.value = false
@@ -493,8 +711,8 @@ function confirmarAbono() {
     actualizado.montoAbonado = Number(actualizado.montoAbonado || 0) + monto
     actualizado.historialAbonos = [...(actualizado.historialAbonos || []), { monto, fecha: fechaHoyString() }]
 
-    if (actualizado.montoAbonado >= actualizado.precio) {
-      actualizado.montoAbonado = actualizado.precio
+    if (actualizado.montoAbonado >= precioTotal(actualizado)) {
+      actualizado.montoAbonado = precioTotal(actualizado)
       actualizado.estadoPago = 'pagado'
     } else {
       actualizado.estadoPago = 'abonado'
@@ -507,10 +725,10 @@ function confirmarAbono() {
 }
 
 function calificarServicio(servicio, n) {
-  if (servicio.estadoPago !== 'pagado') return 
+  if (servicio.estadoPago !== 'pagado') return
   const index = servicios.value.findIndex(s => s.id === servicio.id)
   if (index !== -1) {
-    if (servicios.value[index].calificacion > 0) return 
+    if (servicios.value[index].calificacion > 0) return
     servicios.value[index].calificacion = n
   }
 }
@@ -531,12 +749,191 @@ function confirmarEliminar() {
   servicioAEliminar.value = null
 }
 
+function serviciosActivos() {
+  return servicios.value.filter(s => !s.archivado)
+}
+
 function serviciosFiltrados() {
-  return servicios.value.filter(s => {
+  return serviciosActivos().filter(s => {
     const pasaBarbero = filtroBarbero.value === 'Todos' || s.barbero === filtroBarbero.value
     const pasaEstado = filtroEstado.value === 'Todos' || s.estadoPago === filtroEstado.value
     return pasaBarbero && pasaEstado
   })
+}
+
+function cambiarOrden(campo) {
+  if (ordenarPor.value === campo) {
+    ordenDireccion.value = ordenDireccion.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    ordenarPor.value = campo
+    ordenDireccion.value = 'desc'
+  }
+}
+
+function ordenarServicios(lista) {
+  const dir = ordenDireccion.value === 'asc' ? 1 : -1
+  return [...lista].sort((a, b) => {
+    if (ordenarPor.value === 'fecha') {
+      const fa = `${a.fecha} ${a.hora}`
+      const fb = `${b.fecha} ${b.hora}`
+      return fa < fb ? -1 * dir : fa > fb ? 1 * dir : 0
+    }
+    if (ordenarPor.value === 'precio') {
+      return (precioTotal(a) - precioTotal(b)) * dir
+    }
+    if (ordenarPor.value === 'calificacion') {
+      return (a.calificacion - b.calificacion) * dir
+    }
+    return 0
+  })
+}
+
+function turnoDeHora(hora) {
+  if (!hora) return 'Mañana'
+  const h = parseInt(hora.split(':')[0], 10)
+  if (h < 12) return 'Mañana'
+  if (h < 18) return 'Tarde'
+  return 'Noche'
+}
+
+function serviciosPorTurno() {
+  const filtrados = ordenarServicios(serviciosFiltrados())
+  const grupos = { 'Mañana': [], 'Tarde': [], 'Noche': [] }
+  filtrados.forEach(s => grupos[turnoDeHora(s.hora)].push(s))
+  return grupos
+}
+
+function esHoy(fecha) {
+  return fecha === fechaHoyString()
+}
+
+function serviciosHoy() {
+  return serviciosActivos().filter(s => esHoy(s.fecha))
+}
+
+function totalVendidoHoy() {
+  return serviciosHoy().reduce((acc, s) => acc + Number(s.montoAbonado || 0), 0)
+}
+
+function promedioCalificacionHoy() {
+  const calificados = serviciosHoy().filter(s => s.calificacion > 0)
+  if (calificados.length === 0) return 0
+  return Number((calificados.reduce((acc, s) => acc + s.calificacion, 0) / calificados.length).toFixed(1))
+}
+
+function barberoConMasCortesHoy() {
+  const conteo = {}
+  serviciosHoy().forEach(s => { conteo[s.barbero] = (conteo[s.barbero] || 0) + 1 })
+  let mejor = null
+  let max = 0
+  for (const b in conteo) {
+    if (conteo[b] > max) {
+      max = conteo[b]
+      mejor = b
+    }
+  }
+  return mejor ? `${mejor} (${max})` : 'Sin datos'
+}
+
+function historialCliente() {
+  const q = busquedaCliente.value.trim().toLowerCase()
+  if (!q) return null
+  const coincidencias = servicios.value.filter(s => s.cliente.toLowerCase().includes(q))
+  const visitas = coincidencias.length
+  const totalGastado = coincidencias.reduce((acc, s) => acc + Number(s.montoAbonado || 0), 0)
+  return { nombre: busquedaCliente.value, visitas, totalGastado }
+}
+
+function deudasPorCliente() {
+  const deudas = {}
+  servicios.value
+    .filter(s => s.estadoPago === 'fiado' || s.estadoPago === 'pendiente')
+    .forEach(s => {
+      const saldo = saldoRestante(s)
+      if (saldo > 0) {
+        deudas[s.cliente] = (deudas[s.cliente] || 0) + saldo
+      }
+    })
+  return Object.entries(deudas).map(([cliente, total]) => ({ cliente, total }))
+}
+
+function gananciaBarberoHoy(barbero) {
+  return serviciosHoy()
+    .filter(s => s.barbero === barbero)
+    .reduce((acc, s) => acc + Number(s.montoAbonado || 0), 0)
+}
+
+function comisionBarbero(barbero) {
+  const pct = Number(comisiones.value[barbero] || 0)
+  return gananciaBarberoHoy(barbero) * pct / 100
+}
+
+function abrirCatalogo() {
+  formCatalogoNombre.value = ''
+  formCatalogoPrecio.value = null
+  catalogoEditandoIndex.value = null
+  modalCatalogoAbierto.value = true
+}
+
+function cerrarCatalogo() {
+  modalCatalogoAbierto.value = false
+  formCatalogoNombre.value = ''
+  formCatalogoPrecio.value = null
+  catalogoEditandoIndex.value = null
+}
+
+function agregarOActualizarServicioCatalogo() {
+  if (!formCatalogoNombre.value || formCatalogoNombre.value.trim().length < 2) return
+  if (!formCatalogoPrecio.value || Number(formCatalogoPrecio.value) <= 0) return
+
+  if (catalogoEditandoIndex.value !== null) {
+    catalogoServicios.value[catalogoEditandoIndex.value] = {
+      nombre: formCatalogoNombre.value.trim(),
+      precio: Number(formCatalogoPrecio.value)
+    }
+  } else {
+    catalogoServicios.value.push({
+      nombre: formCatalogoNombre.value.trim(),
+      precio: Number(formCatalogoPrecio.value)
+    })
+  }
+  formCatalogoNombre.value = ''
+  formCatalogoPrecio.value = null
+  catalogoEditandoIndex.value = null
+}
+
+function editarServicioCatalogo(idx) {
+  catalogoEditandoIndex.value = idx
+  formCatalogoNombre.value = catalogoServicios.value[idx].nombre
+  formCatalogoPrecio.value = catalogoServicios.value[idx].precio
+}
+
+function eliminarServicioCatalogo(idx) {
+  catalogoServicios.value.splice(idx, 1)
+}
+
+function abrirCierreCaja() {
+  const hoy = serviciosHoy()
+  resumenCierre.value = {
+    cantidad: hoy.length,
+    efectivo: hoy.filter(s => s.metodoPago === 'Efectivo').reduce((acc, s) => acc + Number(s.montoAbonado || 0), 0),
+    transferencia: hoy.filter(s => s.metodoPago === 'Transferencia').reduce((acc, s) => acc + Number(s.montoAbonado || 0), 0),
+    tarjeta: hoy.filter(s => s.metodoPago === 'Tarjeta').reduce((acc, s) => acc + Number(s.montoAbonado || 0), 0),
+    pendientes: hoy.reduce((acc, s) => acc + saldoRestante(s), 0)
+  }
+  modalCierreAbierto.value = true
+}
+
+function cancelarCierreCaja() {
+  modalCierreAbierto.value = false
+  resumenCierre.value = null
+}
+
+function confirmarCierreCaja() {
+  const hoyStr = fechaHoyString()
+  servicios.value = servicios.value.map(s => (s.fecha === hoyStr && !s.archivado) ? { ...s, archivado: true } : s)
+  modalCierreAbierto.value = false
+  resumenCierre.value = null
 }
 
 function formatearFecha(fecha) {
@@ -550,15 +947,15 @@ function formatearPrecio(precio) {
 }
 
 function totalIngresos() {
-  return servicios.value.reduce((acc, s) => acc + Number(s.montoAbonado || 0), 0)
+  return serviciosActivos().reduce((acc, s) => acc + Number(s.montoAbonado || 0), 0)
 }
 
 function totalPendientes() {
-  return servicios.value.reduce((acc, s) => acc + saldoRestante(s), 0)
+  return serviciosActivos().reduce((acc, s) => acc + saldoRestante(s), 0)
 }
 
 function totalPendientesCantidad() {
-  return servicios.value.filter(s => saldoRestante(s) > 0).length
+  return serviciosActivos().filter(s => saldoRestante(s) > 0).length
 }
 </script>
 
@@ -638,6 +1035,27 @@ html, body, #app {
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
 }
 
+.fila-botones-top {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.fila-botones-top .btn-nuevo {
+  margin-bottom: 0;
+  flex: 2;
+}
+.btn-secundario {
+  flex: 1;
+  background: #fff;
+  color: #7a1f1f;
+  border: 2px solid #7a1f1f;
+  padding: 12px;
+  font-weight: bold;
+  font-size: 22px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
 .btn-nuevo {
   width: 100%;
   background: #7a1f1f;
@@ -673,6 +1091,159 @@ html, body, #app {
 }
 .linea-resumen.verde span:last-child { color: #2e6b2e; font-weight: bold; }
 .linea-resumen.rojo span:last-child { color: #7a1f1f; font-weight: bold; }
+
+.caja-estadisticas,
+.caja-historial-cliente,
+.caja-deudas,
+.caja-comisiones {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  font-size: 26px;
+}
+.caja-estadisticas h3,
+.caja-deudas h3,
+.caja-comisiones h3 {
+  margin: 0 0 6px;
+  font-size: 26px;
+  color: #7a1f1f;
+}
+
+.caja-historial-cliente label { margin-top: 0; }
+.resultado-historial {
+  margin-top: 8px;
+  background: #f5f1e8;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 24px;
+}
+.resultado-historial p { margin: 2px 0; }
+
+.caja-deudas { border-color: #e3b3b3; }
+.linea-deuda {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  color: #7a1f1f;
+  font-weight: bold;
+}
+
+.orden-botones {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.orden-botones .etiqueta { font-size: 22px; }
+.btn-orden {
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 14px;
+  padding: 6px 14px;
+  font-size: 22px;
+  cursor: pointer;
+}
+.btn-orden.activo {
+  background: #7a1f1f;
+  color: #fff;
+  border-color: #7a1f1f;
+}
+
+.turno-grupo { margin-bottom: 10px; }
+.turno-titulo {
+  font-size: 28px;
+  font-weight: bold;
+  color: #7a1f1f;
+  border-bottom: 2px solid #7a1f1f;
+  padding-bottom: 4px;
+  margin-bottom: 12px;
+}
+
+.alerta-fidelidad {
+  background: #fff3d6;
+  color: #8a5a00;
+  border: 1px solid #e0b94d;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 22px;
+  font-weight: bold;
+  margin: 6px 0;
+}
+
+.fotos-antes-despues {
+  display: flex;
+  gap: 10px;
+  margin: 8px 0;
+}
+.foto-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.foto-mini {
+  width: 100%;
+  max-height: 120px;
+  object-fit: cover;
+  border-radius: 4px;
+  margin-top: 4px;
+}
+.foto-preview {
+  width: 100%;
+  max-height: 160px;
+  object-fit: cover;
+  border-radius: 4px;
+  margin-top: 6px;
+}
+
+.caja-comisiones .comisiones-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.btn-mini.cerrar-caja {
+  background: #7a1f1f;
+  color: #fff;
+  flex: none;
+  padding: 8px 14px;
+}
+.linea-comision {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+}
+.comision-nombre { flex: 1; }
+.comision-pct { display: flex; align-items: center; gap: 4px; }
+.comision-pct input {
+  width: 70px;
+  padding: 4px;
+  font-size: 22px;
+  margin: 0;
+}
+.comision-monto { font-weight: bold; color: #2e6b2e; min-width: 110px; text-align: right; }
+
+.catalogo-lista { max-height: 260px; overflow-y: auto; overflow-x: hidden; margin-bottom: 8px; }
+.catalogo-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+  font-size: 20px;
+}
+.catalogo-nombre { flex: 1 1 60%; }
+.catalogo-precio { flex: 1 1 30%; color: #2e6b2e; font-weight: bold; text-align: right; }
+.catalogo-acciones { flex: 1 1 100%; display: flex; gap: 6px; justify-content: flex-end; }
+.catalogo-acciones .btn-mini { padding: 6px 12px; font-size: 18px; flex: none; }
+
+.resumen-cierre { margin-bottom: 10px; }
 
 .filtros {
   display: flex;
@@ -718,6 +1289,7 @@ html, body, #app {
 .estado-verde { background: #e2f3e2; color: #2e6b2e; }
 .estado-naranja { background: #fbe8d3; color: #b5590a; }
 .estado-azul { background: #dde8f7; color: #1f4e7a; }
+.estado-fiado { background: #f7dde0; color: #9b1c3f; }
 
 .ticket-titulo {
   font-size: 34px;
