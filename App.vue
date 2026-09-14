@@ -608,20 +608,34 @@ html, body, #app {
 }
 
 .marca {
+  position: relative;
   text-align: center;
-  margin-bottom: 16px;
-  border-bottom: 2px solid #7a1f1f;
-  padding-bottom: 8px;
+  margin: -16px -24px 16px -24px;
+  padding: 60px 24px 24px;
+  border-bottom: 3px solid #7a1f1f;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  color: #fff;
+  background-image:
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.65)),
+    url('https://st2.depositphotos.com/2251265/7071/i/450/depositphotos_70718015-stock-photo-vintage-tools-of-barber-shop.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 .marca h1 {
   margin: 0;
   font-size: 36px;
-  color: #7a1f1f;
+  color: #fff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
 }
 .marca p {
   margin: 2px 0 0;
   font-size: 24px;
-  color: #666;
+  color: #f0f0f0;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
 }
 
 .btn-nuevo {
