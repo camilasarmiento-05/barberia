@@ -59,7 +59,7 @@
     </div>
 
     <div class="caja-deudas" v-if="deudasPorCliente().length > 0">
-      <h3>⚠ Saldos fiados / pendientes por cliente</h3>
+      <h3>⚠ Saldos pendientes por cliente</h3>
       <div class="linea-deuda" v-for="d in deudasPorCliente()" :key="d.cliente">
         <span>{{ d.cliente }}</span>
         <span>{{ formatearPrecio(d.total) }}</span>
@@ -188,14 +188,21 @@
                 placeholder="Escribe una observación..."
               ></textarea>
 
+              <p class="aviso-baja" v-if="citaYaPaso(s)">Esta cita ya pasó, no se puede editar ni eliminar.</p>
+
               <div class="ticket-acciones">
                 <button
                   class="btn-mini editar"
                   @click="abrirModalEditar(s)"
-                  :disabled="s.calificacion > 0"
-                  :title="s.calificacion > 0 ? 'No se puede editar un servicio ya calificado' : ''"
+                  :disabled="s.calificacion > 0 || citaYaPaso(s)"
+                  :title="s.calificacion > 0 ? 'No se puede editar un servicio ya calificado' : (citaYaPaso(s) ? 'No se puede editar una cita que ya pasó' : '')"
                 >Editar</button>
-                <button class="btn-mini eliminar" @click="pedirConfirmacionEliminar(s)">Eliminar</button>
+                <button
+                  class="btn-mini eliminar"
+                  @click="pedirConfirmacionEliminar(s)"
+                  :disabled="citaYaPaso(s)"
+                  :title="citaYaPaso(s) ? 'No se puede eliminar una cita que ya pasó' : ''"
+                >Eliminar</button>
               </div>
             </div>
           </div>
@@ -232,11 +239,12 @@
                 type="checkbox"
                 :value="t.nombre"
                 v-model="formulario.tiposServicio"
-                @change="actualizarPrecioAutomatico"
+                @change="alCambiarServicio(t.nombre)"
               >
               <span>{{ t.nombre }} ({{ formatearPrecio(t.precio) }})</span>
             </label>
           </div>
+          <p class="pista-precio"></p>
           <p class="error" v-if="errores.tipoServicio">{{ errores.tipoServicio }}</p>
 
           <label>Barbero</label>
@@ -249,15 +257,16 @@
           <div class="fila-doble">
             <div>
               <label>Fecha</label>
-              <input type="date" v-model="formulario.fecha" :min="fechaMinima">
+              <input type="date" v-model="formulario.fecha" :min="fechaMinima" @change="alCambiarFecha">
               <p class="error" v-if="errores.fecha">{{ errores.fecha }}</p>
             </div>
             <div>
               <label>Hora</label>
               <select v-model="formulario.hora">
                 <option value="" disabled>Selecciona...</option>
-                <option v-for="h in horasDisponibles" :key="h" :value="h">{{ h }}</option>
+                <option v-for="h in horasDisponiblesFormulario" :key="h" :value="h">{{ h }}</option>
               </select>
+              <p class="pista-precio" v-if="formulario.fecha === fechaHoyString()"></p>
               <p class="error" v-if="errores.hora">{{ errores.hora }}</p>
             </div>
           </div>
@@ -400,19 +409,34 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 
 const barberos = ['Don Ramiro', 'Carlos Pérez', 'Andrés Gómez']
 
 const catalogoServicios = useLocalStorage('br-catalogo-servicios', [
-  { nombre: 'Corte tradicional', precio: 15000 },
+  { nombre: 'Corte Mullet', precio: 15000 },
+  { nombre: 'Corte Buzz Cut', precio: 15000 },
+  { nombre: 'Corte Taper Fade Texturizado', precio: 18000 },
+  { nombre: 'Corte French Crop', precio: 18000 },
   { nombre: 'Depilación', precio: 10000 },
   { nombre: 'Barba', precio: 10000 },
   { nombre: 'Corte + barba', precio: 25000 },
   { nombre: 'Cejas', precio: 8000 },
   { nombre: 'Tinte', precio: 30000 }
 ])
+
+// Cortes de cabello: solo se puede elegir UNO de estos a la vez.
+const grupoCortes = [
+  'Corte Mullet',
+  'Corte Buzz Cut',
+  'Corte Taper Fade Texturizado',
+  'Corte French Crop'
+]
+// "Corte + barba" ya incluye un corte y la barba, así que no se puede combinar
+// con un corte suelto ni con "Barba". "Barba" sola sí se puede combinar con
+// cualquier corte del grupo de arriba, solo no con "Corte + barba".
+// Cejas, Depilación y Tinte quedan por fuera y se pueden combinar libremente.
 
 const comisiones = useLocalStorage('br-comisiones-barberos', {
   'Don Ramiro': 50,
@@ -421,7 +445,7 @@ const comisiones = useLocalStorage('br-comisiones-barberos', {
 })
 
 const metodosPago = ['Efectivo', 'Transferencia', 'Tarjeta']
-const estadosPago = ['pagado', 'abonado', 'pendiente', 'fiado']
+const estadosPago = ['pagado', 'abonado', 'pendiente']
 
 const opcionesOrden = [
   { key: 'fecha', label: 'Fecha' },
@@ -484,6 +508,35 @@ function fechaHoyString() {
 
 const fechaMinima = ref(fechaHoyString())
 
+// Hora actual en formato "HH:MM", para poder comparar contra las horas del selector.
+function horaActualString() {
+  const ahora = new Date()
+  const hh = String(ahora.getHours()).padStart(2, '0')
+  const mm = String(ahora.getMinutes()).padStart(2, '0')
+  return `${hh}:${mm}`
+}
+
+// Si la fecha elegida es hoy, solo se muestran las horas que aún no han pasado.
+// Si es una fecha futura, se muestran todas las horas normales (8am a 8pm).
+const horasDisponiblesFormulario = computed(() => {
+  if (formulario.value.fecha === fechaHoyString()) {
+    const ahora = horaActualString()
+    return horasDisponibles.filter(h => h > ahora)
+  }
+  return horasDisponibles
+})
+
+// Si el usuario cambia la fecha y la hora que tenía elegida ya no es válida
+// (por ejemplo, eligió una hora que ya pasó y luego puso la fecha de hoy), se limpia.
+function alCambiarFecha() {
+  if (formulario.value.fecha === fechaHoyString()) {
+    const ahora = horaActualString()
+    if (formulario.value.hora && formulario.value.hora <= ahora) {
+      formulario.value.hora = ''
+    }
+  }
+}
+
 function formularioVacio() {
   return {
     cliente: '',
@@ -513,6 +566,7 @@ function abrirModalNuevo() {
 
 function abrirModalEditar(servicio) {
   if (servicio.calificacion > 0) return
+  if (citaYaPaso(servicio)) return
   modoEdicion.value = true
   idEditando.value = servicio.id
   formulario.value = {
@@ -537,6 +591,35 @@ function cerrarModal() {
   modalAbierto.value = false
 }
 
+// Aplica las reglas de exclusividad entre cortes, barba y "Corte + barba":
+// - Solo un corte de cabello (Mullet, Buzz Cut, Taper Fade, French Crop) a la vez.
+// - "Corte + barba" no se puede combinar con un corte suelto ni con "Barba" (ya los incluye).
+// - "Barba" sola sí se puede combinar con un corte, pero no con "Corte + barba".
+// Cejas, depilación y tinte no se ven afectados por estas reglas.
+function alCambiarServicio(nombre) {
+  const yaSeleccionado = formulario.value.tiposServicio.includes(nombre)
+  if (!yaSeleccionado) {
+    actualizarPrecioAutomatico()
+    return
+  }
+
+  if (grupoCortes.includes(nombre)) {
+    formulario.value.tiposServicio = formulario.value.tiposServicio.filter(
+      n => n === nombre || (!grupoCortes.includes(n) && n !== 'Corte + barba')
+    )
+  } else if (nombre === 'Corte + barba') {
+    formulario.value.tiposServicio = formulario.value.tiposServicio.filter(
+      n => n === nombre || (!grupoCortes.includes(n) && n !== 'Barba')
+    )
+  } else if (nombre === 'Barba') {
+    formulario.value.tiposServicio = formulario.value.tiposServicio.filter(
+      n => n === nombre || n !== 'Corte + barba'
+    )
+  }
+
+  actualizarPrecioAutomatico()
+}
+
 function actualizarPrecioAutomatico() {
   const total = formulario.value.tiposServicio.reduce((acc, nombre) => {
     const encontrado = catalogoServicios.value.find(t => t.nombre === nombre)
@@ -553,7 +636,6 @@ function nombresServicios(lista) {
 function claseEstado(estado) {
   if (estado === 'pagado') return 'estado-verde'
   if (estado === 'abonado') return 'estado-azul'
-  if (estado === 'fiado') return 'estado-fiado'
   return 'estado-naranja'
 }
 
@@ -563,6 +645,16 @@ function precioTotal(servicio) {
 
 function saldoRestante(servicio) {
   return Math.max(0, precioTotal(servicio) - Number(servicio.montoAbonado || 0))
+}
+
+// Indica si la fecha y hora de la cita ya pasaron respecto al momento actual.
+function fechaHoraServicio(servicio) {
+  return new Date(`${servicio.fecha}T${servicio.hora}:00`)
+}
+
+function citaYaPaso(servicio) {
+  if (!servicio.fecha || !servicio.hora) return false
+  return fechaHoraServicio(servicio).getTime() < Date.now()
 }
 
 function manejarFoto(event, campo) {
@@ -602,6 +694,8 @@ function validarFormulario() {
   }
   if (!formulario.value.hora) {
     err.hora = 'Selecciona la hora.'
+  } else if (formulario.value.fecha === fechaHoyString() && formulario.value.hora <= horaActualString()) {
+    err.hora = 'Esa hora ya pasó, elige una hora posterior a la actual.'
   }
   if (formulario.value.precio === null || formulario.value.precio === '' || Number(formulario.value.precio) <= 0) {
     err.precio = 'Selecciona al menos un servicio válido.'
@@ -734,6 +828,7 @@ function calificarServicio(servicio, n) {
 }
 
 function pedirConfirmacionEliminar(servicio) {
+  if (citaYaPaso(servicio)) return
   servicioAEliminar.value = servicio
   modalEliminarAbierto.value = true
 }
@@ -847,7 +942,7 @@ function historialCliente() {
 function deudasPorCliente() {
   const deudas = {}
   servicios.value
-    .filter(s => s.estadoPago === 'fiado' || s.estadoPago === 'pendiente')
+    .filter(s => s.estadoPago === 'pendiente')
     .forEach(s => {
       const saldo = saldoRestante(s)
       if (saldo > 0) {
@@ -976,8 +1071,9 @@ html, body, #app {
 .pagina {
   font-family: Arial, sans-serif;
   font-size: 28px;
-  max-width: 1100px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
   padding: 16px 24px;
   background: #f5f1e8;
   min-height: 100vh;
@@ -1008,7 +1104,7 @@ html, body, #app {
   position: relative;
   text-align: center;
   margin: -16px -24px 16px -24px;
-  padding: 60px 24px 24px;
+  padding: 150px 24px 24px;
   border-bottom: 3px solid #7a1f1f;
   min-height: 160px;
   display: flex;
@@ -1017,7 +1113,7 @@ html, body, #app {
   color: #fff;
   background-image:
     linear-gradient(to bottom, rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.65)),
-    url('https://st2.depositphotos.com/2251265/7071/i/450/depositphotos_70718015-stock-photo-vintage-tools-of-barber-shop.jpg');
+    url('./assets/img/barberia.jpg');
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -1166,11 +1262,11 @@ html, body, #app {
   background: #fff3d6;
   color: #8a5a00;
   border: 1px solid #e0b94d;
-  border-radius: 4px;
-  padding: 6px 10px;
-  font-size: 22px;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 21px;
   font-weight: bold;
-  margin: 6px 0;
+  margin: 8px 0;
 }
 
 .fotos-antes-despues {
@@ -1195,8 +1291,9 @@ html, body, #app {
   width: 100%;
   max-height: 160px;
   object-fit: cover;
-  border-radius: 4px;
-  margin-top: 6px;
+  border-radius: 8px;
+  margin-top: 8px;
+  border: 1px solid #e4ddd0;
 }
 
 .caja-comisiones .comisiones-header {
@@ -1289,7 +1386,6 @@ html, body, #app {
 .estado-verde { background: #e2f3e2; color: #2e6b2e; }
 .estado-naranja { background: #fbe8d3; color: #b5590a; }
 .estado-azul { background: #dde8f7; color: #1f4e7a; }
-.estado-fiado { background: #f7dde0; color: #9b1c3f; }
 
 .ticket-titulo {
   font-size: 34px;
@@ -1427,34 +1523,57 @@ html, body, #app {
 .btn-mini.editar { background: #2e6b2e; color: white; }
 .btn-mini.editar:disabled { background: #a9c7a9; cursor: not-allowed; }
 .btn-mini.eliminar { background: #7a1f1f; color: white; }
+.btn-mini.eliminar:disabled { background: #d9a8a8; cursor: not-allowed; }
+.btn-mini.eliminar:hover:not(:disabled) { background: #5f1717; }
+.btn-mini.editar:hover:not(:disabled) { background: #235723; }
 .btn-mini.cancelar { background: #e0e0e0; color: #222; }
+.btn-mini.cancelar:hover { background: #cfcfcf; }
+.btn-nuevo:hover:not(:disabled) { background: #631a1a; }
 
-label { display: block; margin-top: 8px; font-weight: bold; font-size: 24px; }
+label { display: block; margin-top: 18px; margin-bottom: 2px; font-weight: bold; font-size: 23px; color: #4a4a4a; }
 input, select, textarea {
   width: 100%;
-  padding: 8px;
-  margin-top: 3px;
-  border-radius: 4px;
-  border: 1px solid #ccc;
+  padding: 11px 14px;
+  margin-top: 4px;
+  border-radius: 8px;
+  border: 1.5px solid #ddd6c9;
   font-family: inherit;
-  font-size: 28px;
+  font-size: 26px;
+  background: #fdfcf9;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: #7a1f1f;
+  box-shadow: 0 0 0 3px rgba(122, 31, 31, 0.15);
+  background: #fff;
 }
 .precio-bloqueado {
-  background: #eee;
-  color: #444;
+  background: #f5f1e8;
+  color: #7a1f1f;
   font-weight: bold;
   cursor: not-allowed;
+  border-style: dashed;
 }
 .pista-precio {
-  font-size: 20px;
-  color: #888;
-  margin: 2px 0 0;
+  font-size: 19px;
+  color: #8a8375;
+  margin: 5px 0 0;
+  line-height: 1.4;
 }
-.error { color: #7a1f1f; font-size: 22px; margin: 2px 0; }
+.error {
+  color: #7a1f1f;
+  background: #fbeeee;
+  border-left: 3px solid #7a1f1f;
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 20px;
+  margin: 5px 0;
+}
 
 .fila-doble {
   display: flex;
-  gap: 10px;
+  gap: 20px;
 }
 .fila-doble > div {
   flex: 1;
@@ -1462,28 +1581,44 @@ input, select, textarea {
 }
 
 .lista-checks {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 4px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
 }
 .check-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-weight: normal;
   margin-top: 0;
-  font-size: 24px;
+  font-size: 21px;
+  padding: 11px 14px;
+  border: 1.5px solid #e4ddd0;
+  border-radius: 8px;
+  background: #fdfcf9;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
+}
+.check-item:hover {
+  border-color: #cbb2b2;
+}
+.check-item:has(input:checked) {
+  border-color: #7a1f1f;
+  background: #fbeeee;
 }
 .check-item input[type="checkbox"] {
-  width: auto;
+  width: 19px;
+  height: 19px;
   margin: 0;
+  accent-color: #7a1f1f;
 }
 
 .fondo-modal {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(20, 12, 8, 0.55);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1492,15 +1627,29 @@ input, select, textarea {
 }
 .modal {
   background: #fff;
-  padding: 20px;
-  border-radius: 6px;
+  padding: 34px 38px 30px;
+  border-radius: 14px;
   width: 100%;
-  max-width: 400px;
+  max-width: 620px;
   max-height: 90vh;
   overflow-y: auto;
   overflow-x: hidden;
+  box-shadow: 0 28px 60px rgba(20, 8, 8, 0.4);
+  border-top: 6px solid #7a1f1f;
 }
-.modal h2 { margin-top: 0; color: #7a1f1f; font-size: 32px; }
-.modal-acciones { display: flex; gap: 10px; margin-top: 16px; }
+.modal h2 {
+  margin: 0 0 20px;
+  color: #7a1f1f;
+  font-size: 32px;
+  padding-bottom: 14px;
+  border-bottom: 2px solid #f0e4d8;
+}
+.modal-acciones {
+  display: flex;
+  gap: 16px;
+  margin-top: 26px;
+  padding-top: 18px;
+  border-top: 1px solid #f0e4d8;
+}
 .modal-acciones .btn-nuevo, .modal-acciones .btn-mini { margin: 0; }
 </style>
