@@ -5,19 +5,34 @@
       <p>Registro de servicios</p>
     </div>
 
+    <button class="btn-nuevo" @click="abrirModalNuevo">Registrar servicio</button>
     <div class="fila-botones-top">
-      <button class="btn-nuevo" @click="abrirModalNuevo">Registrar servicio</button>
       <button class="btn-secundario" @click="abrirCatalogo">Catálogo de servicios</button>
+      <button class="btn-secundario" @click="modalArchivadosAbierto = true">
+        Archivados ({{ serviciosArchivados().length }})
+      </button>
     </div>
 
     <div class="caja-resumen">
       <div class="linea-resumen">
-        <span>Servicios registrados</span>
+        <span>Servicios activos (sin archivar)</span>
         <span>{{ serviciosActivos().length }}</span>
       </div>
       <div class="linea-resumen verde">
-        <span>Total recaudado</span>
-        <span>{{ formatearPrecio(totalIngresos()) }}</span>
+        <span>Recaudado hoy</span>
+        <span>{{ formatearPrecio(totalVendidoHoy()) }}</span>
+      </div>
+      <div class="linea-resumen verde">
+        <span>Recaudado en cierres anteriores</span>
+        <span>{{ formatearPrecio(totalArchivadoAnterior()) }}</span>
+      </div>
+      <div class="linea-resumen verde" v-if="totalActivoAnterior() > 0">
+        <span>Días anteriores sin cerrar caja</span>
+        <span>{{ formatearPrecio(totalActivoAnterior()) }}</span>
+      </div>
+      <div class="linea-resumen verde total-general">
+        <span>Total recaudado general</span>
+        <span>{{ formatearPrecio(totalGeneralRecaudado()) }}</span>
       </div>
       <div class="linea-resumen rojo" v-if="totalPendientesCantidad() > 0">
         <span>Con saldo pendiente ({{ totalPendientesCantidad() }})</span>
@@ -325,7 +340,7 @@
       </div>
     </div>
 
-    <div class="fondo-modal" v-if="modalAbonoAbierto">
+    <div class="fondo-modal fondo-modal-encima" v-if="modalAbonoAbierto">
       <div class="modal">
         <h2>Registrar abono</h2>
         <p v-if="servicioAbonando">
@@ -398,10 +413,111 @@
           <div class="linea-resumen verde"><span>Total tarjeta</span><span>{{ formatearPrecio(resumenCierre.tarjeta) }}</span></div>
           <div class="linea-resumen rojo"><span>Pendientes por cobrar</span><span>{{ formatearPrecio(resumenCierre.pendientes) }}</span></div>
         </div>
-        <p class="pista-precio">Al confirmar, los servicios de hoy se archivarán y dejarán de aparecer en la vista principal. Las deudas seguirán visibles en el panel de alertas.</p>
+        <p class="pista-precio">Al confirmar, los servicios de hoy se archivarán y dejarán de aparecer en la vista principal, pero podrás verlos y seguir cobrando saldos pendientes desde el botón "Archivados". Las deudas seguirán visibles en el panel de alertas.</p>
         <div class="modal-acciones">
           <button class="btn-nuevo" @click="confirmarCierreCaja">Confirmar y archivar</button>
           <button class="btn-mini cancelar" @click="cancelarCierreCaja">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="fondo-modal" v-if="modalArchivadosAbierto">
+      <div class="modal modal-ancho">
+        <h2>Servicios archivados</h2>
+
+        <div class="resumen-cierre">
+          <div class="linea-resumen">
+            <span>Total de tickets archivados</span>
+            <span>{{ serviciosArchivados().length }}</span>
+          </div>
+          <div class="linea-resumen verde">
+            <span>Total recaudado en archivados</span>
+            <span>{{ formatearPrecio(totalArchivadoTotal()) }}</span>
+          </div>
+          <div class="linea-resumen rojo" v-if="totalPendienteArchivado() > 0">
+            <span>Saldo pendiente dentro de archivados</span>
+            <span>{{ formatearPrecio(totalPendienteArchivado()) }}</span>
+          </div>
+        </div>
+
+        <div class="separador"></div>
+
+        <p class="vacio" v-if="serviciosArchivados().length === 0">Todavía no has cerrado caja, aquí aparecerán los servicios archivados.</p>
+
+        <div class="lista-tickets" v-else>
+          <div class="ticket ticket-archivado" v-for="s in serviciosArchivadosOrdenados()" :key="s.id">
+            <span class="estado" :class="claseEstado(s.estadoPago)">{{ s.estadoPago }}</span>
+            <span class="etiqueta-archivado">Archivado</span>
+
+            <div class="ticket-titulo">{{ s.cliente }}</div>
+            <div class="separador"></div>
+
+            <div class="servicios-bloque">
+              <span class="etiqueta">Servicios</span>
+              <div class="servicio-item" v-for="(nombre, idx) in s.tiposServicio" :key="idx">{{ nombre }}</div>
+            </div>
+            <div class="separador"></div>
+
+            <div class="ticket-fila"><span>Barbero</span><span>{{ s.barbero }}</span></div>
+
+            <div class="fecha-hora">
+              <div class="caja-fecha">
+                <span class="etiqueta">Fecha</span>
+                <span>{{ formatearFecha(s.fecha) }}</span>
+              </div>
+              <div class="caja-fecha">
+                <span class="etiqueta">Hora</span>
+                <span>{{ s.hora }}</span>
+              </div>
+            </div>
+
+            <div class="ticket-fila"><span>Pago</span><span>{{ s.metodoPago }}</span></div>
+
+            <div class="separador"></div>
+            <div class="ticket-fila ticket-total">
+              <span>Total</span>
+              <span v-if="s.propina > 0">{{ formatearPrecio(s.precio) }} + {{ formatearPrecio(s.propina) }} propina</span>
+              <span v-else>{{ formatearPrecio(s.precio) }}</span>
+            </div>
+            <div class="ticket-fila fila-abonado" v-if="s.montoAbonado > 0 && s.montoAbonado < precioTotal(s)">
+              <span>Abonado</span><span>{{ formatearPrecio(s.montoAbonado) }}</span>
+            </div>
+            <div class="ticket-fila fila-saldo" v-if="saldoRestante(s) > 0">
+              <span>Saldo pendiente</span><span>{{ formatearPrecio(saldoRestante(s)) }}</span>
+            </div>
+
+            <div class="historial-abonos" v-if="s.historialAbonos && s.historialAbonos.length > 0">
+              <span class="etiqueta">Historial de abonos</span>
+              <div class="linea-abono" v-for="(a, idx) in s.historialAbonos" :key="idx">
+                <span>{{ formatearFecha(a.fecha) }}</span>
+                <span>{{ formatearPrecio(a.monto) }}</span>
+              </div>
+            </div>
+
+            <button
+              class="btn-mini abonar"
+              v-if="saldoRestante(s) > 0"
+              @click="abrirModalAbono(s)"
+            >Agregar abono</button>
+
+            <div class="calificacion-seccion" v-if="s.calificacion > 0">
+              <span class="etiqueta">Calificación</span>
+              <div class="estrellas">
+                <span
+                  v-for="n in [1,2,3,4,5]"
+                  :key="n"
+                  class="estrella"
+                  :class="{ llena: n <= s.calificacion, baja: n <= s.calificacion && s.calificacion <= 2 }"
+                >★</span>
+              </div>
+            </div>
+
+            <p class="pista-precio" v-if="s.observaciones">{{ s.observaciones }}</p>
+          </div>
+        </div>
+
+        <div class="modal-acciones">
+          <button type="button" class="btn-mini cancelar" @click="modalArchivadosAbierto = false">Cerrar</button>
         </div>
       </div>
     </div>
@@ -426,17 +542,14 @@ const catalogoServicios = useLocalStorage('br-catalogo-servicios', [
   { nombre: 'Tinte', precio: 30000 }
 ])
 
-// Cortes de cabello: solo se puede elegir UNO de estos a la vez.
+
 const grupoCortes = [
   'Corte Mullet',
   'Corte Buzz Cut',
   'Corte Taper Fade Texturizado',
   'Corte French Crop'
 ]
-// "Corte + barba" ya incluye un corte y la barba, así que no se puede combinar
-// con un corte suelto ni con "Barba". "Barba" sola sí se puede combinar con
-// cualquier corte del grupo de arriba, solo no con "Corte + barba".
-// Cejas, Depilación y Tinte quedan por fuera y se pueden combinar libremente.
+
 
 const comisiones = useLocalStorage('br-comisiones-barberos', {
   'Don Ramiro': 50,
@@ -492,6 +605,9 @@ const catalogoEditandoIndex = ref(null)
 const modalCierreAbierto = ref(false)
 const resumenCierre = ref(null)
 
+
+const modalArchivadosAbierto = ref(false)
+
 const filtroBarbero = ref('Todos')
 const filtroEstado = ref('Todos')
 const ordenarPor = ref('fecha')
@@ -508,7 +624,6 @@ function fechaHoyString() {
 
 const fechaMinima = ref(fechaHoyString())
 
-// Hora actual en formato "HH:MM", para poder comparar contra las horas del selector.
 function horaActualString() {
   const ahora = new Date()
   const hh = String(ahora.getHours()).padStart(2, '0')
@@ -516,8 +631,6 @@ function horaActualString() {
   return `${hh}:${mm}`
 }
 
-// Si la fecha elegida es hoy, solo se muestran las horas que aún no han pasado.
-// Si es una fecha futura, se muestran todas las horas normales (8am a 8pm).
 const horasDisponiblesFormulario = computed(() => {
   if (formulario.value.fecha === fechaHoyString()) {
     const ahora = horaActualString()
@@ -526,8 +639,6 @@ const horasDisponiblesFormulario = computed(() => {
   return horasDisponibles
 })
 
-// Si el usuario cambia la fecha y la hora que tenía elegida ya no es válida
-// (por ejemplo, eligió una hora que ya pasó y luego puso la fecha de hoy), se limpia.
 function alCambiarFecha() {
   if (formulario.value.fecha === fechaHoyString()) {
     const ahora = horaActualString()
@@ -591,11 +702,7 @@ function cerrarModal() {
   modalAbierto.value = false
 }
 
-// Aplica las reglas de exclusividad entre cortes, barba y "Corte + barba":
-// - Solo un corte de cabello (Mullet, Buzz Cut, Taper Fade, French Crop) a la vez.
-// - "Corte + barba" no se puede combinar con un corte suelto ni con "Barba" (ya los incluye).
-// - "Barba" sola sí se puede combinar con un corte, pero no con "Corte + barba".
-// Cejas, depilación y tinte no se ven afectados por estas reglas.
+
 function alCambiarServicio(nombre) {
   const yaSeleccionado = formulario.value.tiposServicio.includes(nombre)
   if (!yaSeleccionado) {
@@ -647,7 +754,7 @@ function saldoRestante(servicio) {
   return Math.max(0, precioTotal(servicio) - Number(servicio.montoAbonado || 0))
 }
 
-// Indica si la fecha y hora de la cita ya pasaron respecto al momento actual.
+
 function fechaHoraServicio(servicio) {
   return new Date(`${servicio.fecha}T${servicio.hora}:00`)
 }
@@ -799,6 +906,7 @@ function confirmarAbono() {
     return
   }
 
+
   const index = servicios.value.findIndex(s => s.id === servicio.id)
   if (index !== -1) {
     const actualizado = { ...servicios.value[index] }
@@ -844,8 +952,21 @@ function confirmarEliminar() {
   servicioAEliminar.value = null
 }
 
+
 function serviciosActivos() {
   return servicios.value.filter(s => !s.archivado)
+}
+
+function serviciosArchivados() {
+  return servicios.value.filter(s => s.archivado)
+}
+
+function serviciosArchivadosOrdenados() {
+  return [...serviciosArchivados()].sort((a, b) => {
+    const fa = `${a.fecha} ${a.hora}`
+    const fb = `${b.fecha} ${b.hora}`
+    return fa < fb ? 1 : fa > fb ? -1 : 0
+  })
 }
 
 function serviciosFiltrados() {
@@ -902,12 +1023,41 @@ function esHoy(fecha) {
   return fecha === fechaHoyString()
 }
 
+
 function serviciosHoy() {
-  return serviciosActivos().filter(s => esHoy(s.fecha))
+  return servicios.value.filter(s => esHoy(s.fecha))
 }
 
 function totalVendidoHoy() {
   return serviciosHoy().reduce((acc, s) => acc + Number(s.montoAbonado || 0), 0)
+}
+
+
+function serviciosArchivadosAnteriores() {
+  return servicios.value.filter(s => s.archivado && !esHoy(s.fecha))
+}
+function totalArchivadoAnterior() {
+  return serviciosArchivadosAnteriores().reduce((acc, s) => acc + Number(s.montoAbonado || 0), 0)
+}
+
+
+function serviciosActivosAnteriores() {
+  return servicios.value.filter(s => !s.archivado && !esHoy(s.fecha))
+}
+function totalActivoAnterior() {
+  return serviciosActivosAnteriores().reduce((acc, s) => acc + Number(s.montoAbonado || 0), 0)
+}
+
+function totalGeneralRecaudado() {
+  return totalVendidoHoy() + totalArchivadoAnterior() + totalActivoAnterior()
+}
+
+function totalArchivadoTotal() {
+  return serviciosArchivados().reduce((acc, s) => acc + Number(s.montoAbonado || 0), 0)
+}
+
+function totalPendienteArchivado() {
+  return serviciosArchivados().reduce((acc, s) => acc + saldoRestante(s), 0)
 }
 
 function promedioCalificacionHoy() {
@@ -939,15 +1089,14 @@ function historialCliente() {
   return { nombre: busquedaCliente.value, visitas, totalGastado }
 }
 
+
 function deudasPorCliente() {
   const deudas = {}
   servicios.value
-    .filter(s => s.estadoPago === 'pendiente')
+    .filter(s => saldoRestante(s) > 0)
     .forEach(s => {
       const saldo = saldoRestante(s)
-      if (saldo > 0) {
-        deudas[s.cliente] = (deudas[s.cliente] || 0) + saldo
-      }
+      deudas[s.cliente] = (deudas[s.cliente] || 0) + saldo
     })
   return Object.entries(deudas).map(([cliente, total]) => ({ cliente, total }))
 }
@@ -1041,16 +1190,13 @@ function formatearPrecio(precio) {
   return Number(precio || 0).toLocaleString('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 })
 }
 
-function totalIngresos() {
-  return serviciosActivos().reduce((acc, s) => acc + Number(s.montoAbonado || 0), 0)
-}
 
 function totalPendientes() {
-  return serviciosActivos().reduce((acc, s) => acc + saldoRestante(s), 0)
+  return servicios.value.reduce((acc, s) => acc + saldoRestante(s), 0)
 }
 
 function totalPendientesCantidad() {
-  return serviciosActivos().filter(s => saldoRestante(s) > 0).length
+  return servicios.value.filter(s => saldoRestante(s) > 0).length
 }
 </script>
 
@@ -1136,12 +1282,10 @@ html, body, #app {
   gap: 8px;
   margin-bottom: 14px;
 }
-.fila-botones-top .btn-nuevo {
-  margin-bottom: 0;
-  flex: 2;
+.fila-botones-top .btn-secundario {
+  flex: 1;
 }
 .btn-secundario {
-  flex: 1;
   background: #fff;
   color: #7a1f1f;
   border: 2px solid #7a1f1f;
@@ -1187,6 +1331,13 @@ html, body, #app {
 }
 .linea-resumen.verde span:last-child { color: #2e6b2e; font-weight: bold; }
 .linea-resumen.rojo span:last-child { color: #7a1f1f; font-weight: bold; }
+.linea-resumen.total-general {
+  border-top: 2px solid #ddd6c9;
+  margin-top: 6px;
+  padding-top: 8px;
+}
+.linea-resumen.total-general span:first-child { font-weight: bold; }
+.linea-resumen.total-general span:last-child { font-size: 1.05em; }
 
 .caja-estadisticas,
 .caja-historial-cliente,
@@ -1371,6 +1522,22 @@ html, body, #app {
   padding: 20px;
   margin-bottom: 18px;
   font-size: 28px;
+}
+
+.ticket-archivado {
+  background: #faf8f3;
+}
+.etiqueta-archivado {
+  position: absolute;
+  top: 14px;
+  left: 20px;
+  font-size: 18px;
+  text-transform: uppercase;
+  color: #8a8375;
+  font-weight: bold;
+}
+.ticket-archivado .ticket-titulo {
+  margin-top: 18px;
 }
 
 .estado {
@@ -1625,6 +1792,10 @@ input:focus, select:focus, textarea:focus {
   padding: 10px;
   z-index: 40;
 }
+
+.fondo-modal.fondo-modal-encima {
+  z-index: 60;
+}
 .modal {
   background: #fff;
   padding: 34px 38px 30px;
@@ -1636,6 +1807,9 @@ input:focus, select:focus, textarea:focus {
   overflow-x: hidden;
   box-shadow: 0 28px 60px rgba(20, 8, 8, 0.4);
   border-top: 6px solid #7a1f1f;
+}
+.modal.modal-ancho {
+  max-width: 960px;
 }
 .modal h2 {
   margin: 0 0 20px;
