@@ -542,14 +542,17 @@ const catalogoServicios = useLocalStorage('br-catalogo-servicios', [
   { nombre: 'Tinte', precio: 30000 }
 ])
 
-
+// Cortes de cabello: solo se puede elegir UNO de estos a la vez.
 const grupoCortes = [
   'Corte Mullet',
   'Corte Buzz Cut',
   'Corte Taper Fade Texturizado',
   'Corte French Crop'
 ]
-
+// "Corte + barba" ya incluye un corte y la barba, así que no se puede combinar
+// con un corte suelto ni con "Barba". "Barba" sola sí se puede combinar con
+// cualquier corte del grupo de arriba, solo no con "Corte + barba".
+// Cejas, Depilación y Tinte quedan por fuera y se pueden combinar libremente.
 
 const comisiones = useLocalStorage('br-comisiones-barberos', {
   'Don Ramiro': 50,
@@ -605,7 +608,7 @@ const catalogoEditandoIndex = ref(null)
 const modalCierreAbierto = ref(false)
 const resumenCierre = ref(null)
 
-
+// Modal para ver los servicios que ya quedaron archivados al cerrar caja.
 const modalArchivadosAbierto = ref(false)
 
 const filtroBarbero = ref('Todos')
@@ -624,6 +627,7 @@ function fechaHoyString() {
 
 const fechaMinima = ref(fechaHoyString())
 
+// Hora actual en formato "HH:MM", para poder comparar contra las horas del selector.
 function horaActualString() {
   const ahora = new Date()
   const hh = String(ahora.getHours()).padStart(2, '0')
@@ -631,6 +635,8 @@ function horaActualString() {
   return `${hh}:${mm}`
 }
 
+// Si la fecha elegida es hoy, solo se muestran las horas que aún no han pasado.
+// Si es una fecha futura, se muestran todas las horas normales (8am a 8pm).
 const horasDisponiblesFormulario = computed(() => {
   if (formulario.value.fecha === fechaHoyString()) {
     const ahora = horaActualString()
@@ -639,6 +645,8 @@ const horasDisponiblesFormulario = computed(() => {
   return horasDisponibles
 })
 
+// Si el usuario cambia la fecha y la hora que tenía elegida ya no es válida
+// (por ejemplo, eligió una hora que ya pasó y luego puso la fecha de hoy), se limpia.
 function alCambiarFecha() {
   if (formulario.value.fecha === fechaHoyString()) {
     const ahora = horaActualString()
@@ -702,7 +710,11 @@ function cerrarModal() {
   modalAbierto.value = false
 }
 
-
+// Aplica las reglas de exclusividad entre cortes, barba y "Corte + barba":
+// - Solo un corte de cabello (Mullet, Buzz Cut, Taper Fade, French Crop) a la vez.
+// - "Corte + barba" no se puede combinar con un corte suelto ni con "Barba" (ya los incluye).
+// - "Barba" sola sí se puede combinar con un corte, pero no con "Corte + barba".
+// Cejas, depilación y tinte no se ven afectados por estas reglas.
 function alCambiarServicio(nombre) {
   const yaSeleccionado = formulario.value.tiposServicio.includes(nombre)
   if (!yaSeleccionado) {
@@ -754,7 +766,7 @@ function saldoRestante(servicio) {
   return Math.max(0, precioTotal(servicio) - Number(servicio.montoAbonado || 0))
 }
 
-
+// Indica si la fecha y hora de la cita ya pasaron respecto al momento actual.
 function fechaHoraServicio(servicio) {
   return new Date(`${servicio.fecha}T${servicio.hora}:00`)
 }
@@ -906,7 +918,8 @@ function confirmarAbono() {
     return
   }
 
-
+  // Ojo: buscamos por id sobre "servicios.value" (la lista completa), así que esto
+  // funciona igual de bien para un ticket activo que para uno ya archivado.
   const index = servicios.value.findIndex(s => s.id === servicio.id)
   if (index !== -1) {
     const actualizado = { ...servicios.value[index] }
@@ -952,7 +965,9 @@ function confirmarEliminar() {
   servicioAEliminar.value = null
 }
 
-
+// --- Activos vs archivados -------------------------------------------------
+// "Activos" = todavía visibles en la lista principal de tickets (no se han
+// mandado a un cierre de caja). "Archivados" = ya pasaron por "Cerrar caja".
 function serviciosActivos() {
   return servicios.value.filter(s => !s.archivado)
 }
@@ -1023,16 +1038,22 @@ function esHoy(fecha) {
   return fecha === fechaHoyString()
 }
 
-
+// IMPORTANTE: antes esta función filtraba también por "no archivado", así que
+// apenas cerrabas caja las estadísticas y comisiones de "hoy" se iban a cero,
+// aunque esa plata sí se hubiera cobrado hoy mismo. Ahora cuenta todos los
+// servicios de la fecha de hoy, estén o no archivados.
 function serviciosHoy() {
   return servicios.value.filter(s => esHoy(s.fecha))
 }
 
+// --- Sumas de dinero ---------------------------------------------------
+// Dinero cobrado hoy (incluye lo ya archivado si cerraste caja hoy mismo).
 function totalVendidoHoy() {
   return serviciosHoy().reduce((acc, s) => acc + Number(s.montoAbonado || 0), 0)
 }
 
-
+// Servicios archivados de días anteriores (no de hoy), para no contar dos
+// veces la plata de hoy si ya cerraste caja.
 function serviciosArchivadosAnteriores() {
   return servicios.value.filter(s => s.archivado && !esHoy(s.fecha))
 }
@@ -1040,7 +1061,9 @@ function totalArchivadoAnterior() {
   return serviciosArchivadosAnteriores().reduce((acc, s) => acc + Number(s.montoAbonado || 0), 0)
 }
 
-
+// Caso raro pero posible: servicios de días anteriores que quedaron activos
+// porque nunca se cerró caja ese día. Se muestran aparte para que no se
+// pierdan del total general.
 function serviciosActivosAnteriores() {
   return servicios.value.filter(s => !s.archivado && !esHoy(s.fecha))
 }
@@ -1048,10 +1071,15 @@ function totalActivoAnterior() {
   return serviciosActivosAnteriores().reduce((acc, s) => acc + Number(s.montoAbonado || 0), 0)
 }
 
+// Total general = hoy + archivados de antes + activos sueltos de antes.
+// Esto es exactamente la suma de "montoAbonado" de TODOS los servicios,
+// así que siempre cuadra sin importar si el servicio está archivado o no.
 function totalGeneralRecaudado() {
   return totalVendidoHoy() + totalArchivadoAnterior() + totalActivoAnterior()
 }
 
+// Total recaudado solo dentro de lo archivado (de hoy o de antes), para
+// mostrar dentro del modal de "Archivados".
 function totalArchivadoTotal() {
   return serviciosArchivados().reduce((acc, s) => acc + Number(s.montoAbonado || 0), 0)
 }
@@ -1089,7 +1117,8 @@ function historialCliente() {
   return { nombre: busquedaCliente.value, visitas, totalGastado }
 }
 
-
+// Las deudas se calculan sobre TODOS los servicios (archivados o no), porque
+// un cliente le sigue debiendo a la barbería aunque ya hayas cerrado caja.
 function deudasPorCliente() {
   const deudas = {}
   servicios.value
@@ -1190,7 +1219,9 @@ function formatearPrecio(precio) {
   return Number(precio || 0).toLocaleString('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 })
 }
 
-
+// Saldo pendiente total: se calcula sobre TODOS los servicios (no solo los
+// activos), porque un servicio archivado que quedó "abonado" o "pendiente"
+// sigue debiendo plata aunque ya no aparezca en la lista principal.
 function totalPendientes() {
   return servicios.value.reduce((acc, s) => acc + saldoRestante(s), 0)
 }
@@ -1792,7 +1823,9 @@ input:focus, select:focus, textarea:focus {
   padding: 10px;
   z-index: 40;
 }
-
+/* El modal de abono se puede abrir DESDE DENTRO del modal de Archivados
+   (o del de catálogo/cierre en un futuro), así que necesita quedar por
+   encima de cualquier otro modal abierto, no detrás. */
 .fondo-modal.fondo-modal-encima {
   z-index: 60;
 }
